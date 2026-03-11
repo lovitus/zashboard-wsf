@@ -312,6 +312,11 @@ const en = {
   tunnelStop: 'Stop Tunnel',
   tunnelRunning: 'Running',
   tunnelStopped: 'Stopped',
+  tunnelEmpty: 'No tunnels configured. Add one below.',
+  tunnelAdd: 'Add Tunnel',
+  tunnelEdit: 'Edit Tunnel',
+  tunnelSelectBackend: 'Link to backend (optional)',
+  tunnelSaved: 'Tunnel saved',
 }
 
 export type LANG_MESSAGE = typeof en

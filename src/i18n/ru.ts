@@ -315,6 +315,11 @@ const ru: LANG_MESSAGE = {
   tunnelStop: 'Остановить туннель',
   tunnelRunning: 'Работает',
   tunnelStopped: 'Остановлен',
+  tunnelEmpty: 'Туннели не настроены. Добавьте ниже.',
+  tunnelAdd: 'Добавить туннель',
+  tunnelEdit: 'Редактировать туннель',
+  tunnelSelectBackend: 'Привязать к бэкенду (необяз.)',
+  tunnelSaved: 'Туннель сохранён',
 }
 
 export default ru

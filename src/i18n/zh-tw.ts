@@ -309,6 +309,11 @@ const zhTW: LANG_MESSAGE = {
   tunnelStop: '停止隧道',
   tunnelRunning: '運行中',
   tunnelStopped: '已停止',
+  tunnelEmpty: '尚無隧道配置，請在下方新增。',
+  tunnelAdd: '新增隧道',
+  tunnelEdit: '編輯隧道',
+  tunnelSelectBackend: '關聯後端（可選）',
+  tunnelSaved: '隧道已儲存',
 }
 
 export default zhTW

@@ -309,6 +309,11 @@ const zh: LANG_MESSAGE = {
   tunnelStop: '停止隧道',
   tunnelRunning: '运行中',
   tunnelStopped: '已停止',
+  tunnelEmpty: '暂无隧道配置，请在下方添加。',
+  tunnelAdd: '添加隧道',
+  tunnelEdit: '编辑隧道',
+  tunnelSelectBackend: '关联后端（可选）',
+  tunnelSaved: '隧道已保存',
 }
 
 export default zh
