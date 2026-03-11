@@ -1,5 +1,7 @@
+mod ui_manager;
+
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 #[cfg(desktop)]
@@ -148,6 +150,7 @@ struct TunnelState {
     configs: Vec<TunnelConfig>,
     sidecar_dir: PathBuf,
     config_path: PathBuf,
+    running_set: HashSet<String>,
 }
 
 // --- Persistence ---
@@ -618,6 +621,7 @@ async fn start_tunnel(
     {
         let mut s = state.lock().map_err(|e| e.to_string())?;
         s.processes.insert(id.clone(), process);
+        s.running_set.insert(id.clone());
     }
 
     // Wait briefly then check if process crashed immediately
@@ -636,6 +640,7 @@ async fn start_tunnel(
                     );
                     eprintln!("Tunnel {} early exit: {}", id, error_msg);
                     s.processes.remove(&id);
+                    s.running_set.remove(&id);
                     return Err(error_msg);
                 }
                 Ok(None) => {
@@ -664,6 +669,7 @@ async fn stop_tunnel(
 ) -> Result<TunnelStatus, String> {
     let process_to_kill = {
         let mut s = state.lock().map_err(|e| e.to_string())?;
+        s.running_set.remove(&id);
         s.processes.remove(&id)
     };
 
@@ -678,6 +684,82 @@ async fn stop_tunnel(
         error: None,
         logs: Vec::new(),
     })
+}
+
+#[tauri::command]
+async fn health_check_tunnels(
+    state: State<'_, Mutex<TunnelState>>,
+) -> Result<Vec<String>, String> {
+    // Collect dead tunnels that should still be running
+    let to_restart: Vec<(String, String, Vec<String>, PathBuf)>;
+    {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        let running_ids: Vec<String> = s.running_set.iter().cloned().collect();
+        let mut dead_ids = Vec::new();
+
+        for id in &running_ids {
+            if let Some(proc) = s.processes.get_mut(id) {
+                match proc.child.try_wait() {
+                    Ok(Some(_exit)) => {
+                        dead_ids.push(id.clone());
+                    }
+                    Ok(None) => {} // still running
+                    Err(_) => {
+                        dead_ids.push(id.clone());
+                    }
+                }
+            }
+            // If not in processes at all but in running_set, it crashed and was already cleaned up
+            else {
+                dead_ids.push(id.clone());
+            }
+        }
+
+        to_restart = dead_ids
+            .iter()
+            .filter_map(|id| {
+                let config = s.configs.iter().find(|c| &c.id == id)?;
+                Some((
+                    config.id.clone(),
+                    config.tool.clone(),
+                    config.args.clone(),
+                    s.sidecar_dir.clone(),
+                ))
+            })
+            .collect();
+
+        // Clean up dead processes
+        for id in &dead_ids {
+            s.processes.remove(id);
+        }
+    }
+
+    if to_restart.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut restarted = Vec::new();
+    for (id, tool, args, sidecar_dir) in to_restart {
+        eprintln!("Health check: restarting tunnel {}", id);
+        match spawn_tunnel(&sidecar_dir, &tool, &args) {
+            Ok(process) => {
+                let mut s = state.lock().map_err(|e| e.to_string())?;
+                s.processes.insert(id.clone(), process);
+                restarted.push(id);
+            }
+            Err(e) => {
+                eprintln!("Health check: failed to restart {}: {}", id, e);
+                // Remove from running_set so we don't loop-retry
+                let mut s = state.lock().map_err(|e| e.to_string())?;
+                s.running_set.remove(&id);
+            }
+        }
+    }
+
+    if !restarted.is_empty() {
+        eprintln!("Health check: restarted {} tunnels", restarted.len());
+    }
+    Ok(restarted)
 }
 
 #[tauri::command]
@@ -768,12 +850,19 @@ pub fn run() {
         configs: load_configs(&config_path),
         sidecar_dir: sidecar_dir.clone(),
         config_path,
+        running_set: HashSet::new(),
     };
+
+    let ui_state = ui_manager::init_state();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .manage(Mutex::new(ts))
+        .manage(Mutex::new(ui_state))
+        .register_uri_scheme_protocol("zui", |ctx, request| {
+            ui_manager::handle_zui_protocol(&ctx, request)
+        })
         .invoke_handler(tauri::generate_handler![
             get_tunnels,
             get_tunnel_statuses,
@@ -781,7 +870,14 @@ pub fn run() {
             remove_tunnel,
             start_tunnel,
             stop_tunnel,
+            health_check_tunnels,
             add_defender_exclusion,
+            ui_manager::ui_fetch_releases,
+            ui_manager::ui_download_version,
+            ui_manager::ui_activate_version,
+            ui_manager::ui_deactivate,
+            ui_manager::ui_get_info,
+            ui_manager::ui_delete_version,
         ])
         .setup(move |app| {
             // --- Mobile: fix config path using Tauri's app data dir ---
@@ -861,6 +957,7 @@ pub fn run() {
                             let state = handle.state::<Mutex<TunnelState>>();
                             let mut s = state.lock().unwrap();
                             s.processes.insert(id.clone(), process);
+                            s.running_set.insert(id.clone());
                             eprintln!("Auto-started tunnel: {}", id);
                         }
                         Err(e) => {

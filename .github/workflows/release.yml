@@ -205,10 +205,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enable extractNativeLibs for sidecar execution
+      - name: Configure Android manifest (network, sidecar, keyboard)
         run: |
           MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
-          sed -i 's/<application/<application android:extractNativeLibs="true"/' "$MANIFEST"
+          RES_XML="src-tauri/gen/android/app/src/main/res/xml"
+
+          # Create network security config allowing cleartext for localhost and LAN
+          mkdir -p "$RES_XML"
+          cat > "$RES_XML/network_security_config.xml" <<- 'NSEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+            <base-config cleartextTrafficPermitted="true">
+              <trust-anchors>
+                <certificates src="system" />
+              </trust-anchors>
+            </base-config>
+          </network-security-config>
+          NSEOF
+
+          # Ensure network permissions
+          if ! grep -q 'ACCESS_NETWORK_STATE' "$MANIFEST"; then
+            sed -i '/<uses-permission.*INTERNET/a\    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' "$MANIFEST"
+          fi
+
+          # Modify <application> tag: extractNativeLibs + cleartext + networkSecurityConfig
+          sed -i 's/<application/<application android:extractNativeLibs="true" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml\/network_security_config"/' "$MANIFEST"
+
+          # Add windowSoftInputMode=adjustResize to the first <activity> (keyboard fix)
+          sed -i '0,/<activity/{s/<activity/<activity android:windowSoftInputMode="adjustResize"/}' "$MANIFEST"
+
+          echo "=== AndroidManifest.xml ==="
+          cat "$MANIFEST"
+          echo "=== network_security_config.xml ==="
+          cat "$RES_XML/network_security_config.xml"
 
       - name: Build Android APK
         run: pnpm tauri android build --apk

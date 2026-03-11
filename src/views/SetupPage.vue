@@ -9,134 +9,152 @@
     <div class="absolute right-4 bottom-4 max-sm:hidden">
       <LanguageSelect />
     </div>
-    <div class="mx-auto flex min-h-full w-96 max-w-[90%] flex-col items-stretch justify-center gap-4 py-4">
-    <div class="card gap-3 px-6 py-2">
-      <h1 class="text-2xl font-semibold">{{ $t('setup') }}</h1>
-      <div class="flex flex-col gap-1">
-        <label class="text-sm">
-          <span>{{ $t('protocol') }}</span>
-        </label>
-        <select
-          class="select select-sm w-full"
-          v-model="form.protocol"
-        >
-          <option value="http">HTTP</option>
-          <option value="https">HTTPS</option>
-        </select>
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="text-sm">
-          <span>{{ $t('host') }}</span>
-        </label>
-        <TextInput
-          class="w-full"
-          name="username"
-          autocomplete="username"
-          v-model="form.host"
-        />
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="text-sm">
-          <span>{{ $t('port') }}</span>
-        </label>
-        <TextInput
-          class="w-full"
-          v-model="form.port"
-        />
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="flex items-center gap-1 text-sm">
-          <span>{{ $t('secondaryPath') }} ({{ $t('optional') }})</span>
-          <span
-            class="tooltip"
-            :data-tip="$t('secondaryPathTip')"
-          >
-            <QuestionMarkCircleIcon class="h-4 w-4" />
-          </span>
-        </label>
-        <TextInput
-          class="w-full"
-          v-model="form.secondaryPath"
-        />
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="text-sm">
-          <span>{{ $t('password') }}</span>
-        </label>
-        <input
-          type="password"
-          class="input input-sm w-full"
-          v-model="form.password"
-        />
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="text-sm">
-          <span>{{ $t('label') }} ({{ $t('optional') }})</span>
-        </label>
-        <TextInput
-          class="w-full"
-          v-model="form.label"
-        />
-      </div>
-      <button
-        class="btn btn-primary btn-sm w-full"
-        @click="handleSubmit(form)"
-      >
-        {{ $t('submit') }}
-      </button>
-      <Draggable
-        class="flex flex-1 flex-col gap-2"
-        v-model="backendList"
-        group="list"
-        :animation="150"
-        :item-key="'uuid'"
-      >
-        <template #item="{ element }">
-          <div
-            :key="element.uuid"
-            class="flex items-center gap-2"
-          >
-            <button class="btn btn-circle btn-ghost btn-sm">
-              <ChevronUpDownIcon class="h-4 w-4 cursor-grab" />
-            </button>
-            <button
-              class="btn btn-sm flex-1"
-              @click="selectBackend(element.uuid)"
-            >
-              {{ getLabelFromBackend(element) }}
-            </button>
-            <button
-              class="btn btn-circle btn-ghost btn-sm"
-              @click="editBackend(element)"
-            >
-              <PencilIcon class="h-4 w-4" />
-            </button>
-            <button
-              class="btn btn-circle btn-ghost btn-sm"
-              @click="() => removeBackend(element.uuid)"
-            >
-              <TrashIcon class="h-4 w-4" />
-            </button>
-          </div>
-        </template>
-      </Draggable>
-      <div class="mt-4 sm:hidden">
-        <LanguageSelect />
-      </div>
-      <div class="absolute top-2 right-2 sm:hidden">
-        <ImportSettings />
-      </div>
-    </div>
-
-    <!-- Tunnel Management (Tauri only) -->
     <div
-      v-if="isTauriApp"
-      class="card px-6 py-4"
+      class="mx-auto flex min-h-full w-96 max-w-[90%] flex-col items-stretch justify-center gap-4 py-4"
     >
-      <TunnelManager />
-    </div>
+      <div class="card gap-3 px-6 py-2">
+        <h1 class="text-2xl font-semibold">{{ $t('setup') }}</h1>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('protocol') }}</span>
+          </label>
+          <select
+            class="select select-sm w-full"
+            v-model="form.protocol"
+          >
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('host') }}</span>
+          </label>
+          <TextInput
+            class="w-full"
+            name="username"
+            autocomplete="username"
+            v-model="form.host"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('port') }}</span>
+          </label>
+          <TextInput
+            class="w-full"
+            v-model="form.port"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="flex items-center gap-1 text-sm">
+            <span>{{ $t('secondaryPath') }} ({{ $t('optional') }})</span>
+            <span
+              class="tooltip"
+              :data-tip="$t('secondaryPathTip')"
+            >
+              <QuestionMarkCircleIcon class="h-4 w-4" />
+            </span>
+          </label>
+          <TextInput
+            class="w-full"
+            v-model="form.secondaryPath"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('password') }}</span>
+          </label>
+          <input
+            type="password"
+            class="input input-sm w-full"
+            v-model="form.password"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('label') }} ({{ $t('optional') }})</span>
+          </label>
+          <TextInput
+            class="w-full"
+            v-model="form.label"
+          />
+        </div>
+        <button
+          class="btn btn-primary btn-sm w-full"
+          @click="handleSubmit(form)"
+        >
+          {{ $t('submit') }}
+        </button>
+        <Draggable
+          class="flex flex-1 flex-col gap-2"
+          v-model="backendList"
+          group="list"
+          :animation="150"
+          :item-key="'uuid'"
+        >
+          <template #item="{ element }">
+            <div
+              :key="element.uuid"
+              class="flex items-center gap-2"
+            >
+              <button class="btn btn-circle btn-ghost btn-sm">
+                <ChevronUpDownIcon class="h-4 w-4 cursor-grab" />
+              </button>
+              <button
+                class="btn btn-sm flex-1"
+                @click="selectBackend(element.uuid)"
+              >
+                {{ getLabelFromBackend(element) }}
+              </button>
+              <button
+                class="btn btn-circle btn-ghost btn-sm"
+                @click="editBackend(element)"
+              >
+                <PencilIcon class="h-4 w-4" />
+              </button>
+              <button
+                class="btn btn-circle btn-ghost btn-sm"
+                @click="() => removeBackend(element.uuid)"
+              >
+                <TrashIcon class="h-4 w-4" />
+              </button>
+            </div>
+          </template>
+        </Draggable>
+        <div class="mt-4 sm:hidden">
+          <LanguageSelect />
+        </div>
+        <div class="absolute top-2 right-2 sm:hidden">
+          <ImportSettings />
+        </div>
+      </div>
 
-    </div><!-- close flex column wrapper -->
+      <!-- Tunnel Management (Tauri only) -->
+      <div
+        v-if="isTauriApp"
+        class="card px-6 py-4"
+      >
+        <TunnelManager />
+      </div>
+
+      <!-- App Update Checker (Tauri only) -->
+      <div
+        v-if="isTauriApp"
+        class="card px-6 py-4"
+      >
+        <AppUpdater />
+      </div>
+
+      <!-- Upstream Zashboard UI Manager (Tauri only) -->
+      <div
+        v-if="isTauriApp"
+        class="card px-6 py-4"
+      >
+        <UpstreamUIManager />
+      </div>
+    </div>
+    <!-- close flex column wrapper -->
 
     <!-- 编辑Backend Modal -->
     <EditBackendModal
@@ -147,11 +165,14 @@
 </template>
 
 <script setup lang="ts">
+import { isTauri } from '@/api/tunnel'
 import ImportSettings from '@/components/common/ImportSettings.vue'
 import TextInput from '@/components/common/TextInput.vue'
+import AppUpdater from '@/components/settings/AppUpdater.vue'
 import EditBackendModal from '@/components/settings/EditBackendModal.vue'
 import LanguageSelect from '@/components/settings/LanguageSelect.vue'
 import TunnelManager from '@/components/settings/TunnelManager.vue'
+import UpstreamUIManager from '@/components/settings/UpstreamUIManager.vue'
 import { ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
 import { getBackendFromUrl, getLabelFromBackend, getUrlFromBackend } from '@/helper/utils'
@@ -166,7 +187,6 @@ import {
 } from '@heroicons/vue/24/outline'
 import { reactive, ref, watch } from 'vue'
 import Draggable from 'vuedraggable'
-import { isTauri } from '@/api/tunnel'
 
 const form = reactive({
   protocol: 'http',

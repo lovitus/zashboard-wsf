@@ -54,7 +54,7 @@
           </button>
         </div>
       </div>
-      <div class="text-base-content/50 break-all text-xs">
+      <div class="text-base-content/50 text-xs break-all">
         {{ tunnel.args.join(' ') }}
       </div>
       <!-- Last 10 log lines -->
@@ -65,8 +65,10 @@
         <div
           v-for="(line, i) in getTunnelLogs(tunnel.id)"
           :key="i"
-          class="text-base-content/70 whitespace-pre-wrap break-all"
-        >{{ line }}</div>
+          class="text-base-content/70 break-all whitespace-pre-wrap"
+        >
+          {{ line }}
+        </div>
       </div>
     </div>
 
@@ -75,9 +77,7 @@
       v-if="avBlocked"
       class="bg-warning/10 border-warning flex flex-col gap-2 rounded-lg border p-3"
     >
-      <div class="text-warning text-sm font-medium">
-        ⚠ {{ $t('tunnelAvBlocked') }}
-      </div>
+      <div class="text-warning text-sm font-medium">⚠ {{ $t('tunnelAvBlocked') }}</div>
       <div class="text-base-content/70 text-xs">
         {{ $t('tunnelAvBlockedDesc') }}
       </div>
@@ -167,17 +167,18 @@
 </template>
 
 <script setup lang="ts">
+import type { RustTunnelConfig } from '@/api/tunnel'
 import {
+  addDefenderExclusion,
   getTunnels,
   getTunnelStatuses,
-  saveTunnel,
+  healthCheckTunnels,
   removeTunnel,
+  saveTunnel,
   startTunnel,
   stopTunnel,
   tunnelStatuses,
-  addDefenderExclusion,
 } from '@/api/tunnel'
-import type { RustTunnelConfig } from '@/api/tunnel'
 import { showNotification } from '@/helper/notification'
 import { getLabelFromBackend } from '@/helper/utils'
 import { backendList } from '@/store/setup'
@@ -299,9 +300,7 @@ async function handleSave() {
     name: tunnelForm.name.trim(),
     backend_uuid: tunnelForm.backend_uuid,
     tool: tunnelForm.tool,
-    args: tunnelForm.args
-      .split(/\s+/)
-      .filter((a) => a.length > 0),
+    args: tunnelForm.args.split(/\s+/).filter((a) => a.length > 0),
     local_port: 0,
     auto_start: tunnelForm.autoStart,
   }
@@ -331,12 +330,48 @@ async function handleFixAv() {
 
 let statusInterval: ReturnType<typeof setInterval> | null = null
 
+function startPolling() {
+  if (statusInterval) return
+  statusInterval = setInterval(() => getTunnelStatuses(), 3000)
+}
+
+function stopPolling() {
+  if (statusInterval) {
+    clearInterval(statusInterval)
+    statusInterval = null
+  }
+}
+
+async function onVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    // App came to foreground — health check and restart dead tunnels
+    try {
+      const restarted = await healthCheckTunnels()
+      if (restarted.length > 0) {
+        showNotification({
+          content: `${t('tunnelHealthRestored')}: ${restarted.length}`,
+          type: 'alert-info',
+        })
+      }
+    } catch (e) {
+      console.warn('Health check failed:', e)
+    }
+    await refreshTunnels()
+    startPolling()
+  } else {
+    // App went to background — stop polling to save battery
+    stopPolling()
+  }
+}
+
 onMounted(async () => {
   await refreshTunnels()
-  statusInterval = setInterval(() => getTunnelStatuses(), 3000)
+  startPolling()
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onUnmounted(() => {
-  if (statusInterval) clearInterval(statusInterval)
+  stopPolling()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
