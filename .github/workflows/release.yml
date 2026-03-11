@@ -23,28 +23,24 @@ jobs:
           - platform: windows-latest
             args: '--bundles nsis'
             target: ''
-            sidecar_triple: x86_64-pc-windows-msvc
             gust_asset_suffix: windows-amd64
             slider_asset_suffix: windows-amd64
             archive: zip
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
             target: aarch64-apple-darwin
-            sidecar_triple: aarch64-apple-darwin
             gust_asset_suffix: darwin-arm64
             slider_asset_suffix: darwin-arm64
             archive: gz
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
             target: x86_64-apple-darwin
-            sidecar_triple: x86_64-apple-darwin
             gust_asset_suffix: darwin-amd64
             slider_asset_suffix: darwin-amd64
             archive: gz
           - platform: ubuntu-22.04
             args: ''
             target: ''
-            sidecar_triple: x86_64-unknown-linux-gnu
             gust_asset_suffix: linux-amd64
             slider_asset_suffix: linux-amd64
             archive: gz
@@ -59,53 +55,48 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: Download sidecar binaries
+      - name: Download and embed sidecar binaries
         shell: bash
         run: |
-          mkdir -p src-tauri/binaries
-          TRIPLE="${{ matrix.sidecar_triple }}"
+          mkdir -p src-tauri/embed
 
           if [ "${{ matrix.archive }}" = "zip" ]; then
             # Windows: .zip archives
             gh release download "$GUST_TAG" --repo lovitus/gust \
               -p "gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}.zip" -D /tmp
             unzip -o "/tmp/gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}.zip" -d /tmp/gust
-            cp /tmp/gust/gost*.exe "src-tauri/binaries/gust-${TRIPLE}.exe"
+            GUST_BIN=$(ls /tmp/gust/gost*.exe | head -1)
 
             gh release download "$SLIDER_TAG" --repo lovitus/slider \
               -p "slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}.zip" -D /tmp
             unzip -o "/tmp/slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}.zip" -d /tmp/slider
-            cp /tmp/slider/slider*.exe "src-tauri/binaries/slider-${TRIPLE}.exe"
+            SLIDER_BIN=$(ls /tmp/slider/slider*.exe | head -1)
+
+            # Strip UPX compression (reduces AV false positives)
+            choco install upx -y 2>/dev/null || true
+            upx -d "$GUST_BIN" 2>/dev/null || true
+            upx -d "$SLIDER_BIN" 2>/dev/null || true
           else
             # Unix: .gz archives
             gh release download "$GUST_TAG" --repo lovitus/gust \
               -p "gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}.gz" -D /tmp
             gunzip -f "/tmp/gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}.gz"
-            mv "/tmp/gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}" "src-tauri/binaries/gust-${TRIPLE}"
-            chmod +x "src-tauri/binaries/gust-${TRIPLE}"
+            GUST_BIN="/tmp/gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}"
 
             gh release download "$SLIDER_TAG" --repo lovitus/slider \
               -p "slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}.gz" -D /tmp
             gunzip -f "/tmp/slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}.gz"
-            mv "/tmp/slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}" "src-tauri/binaries/slider-${TRIPLE}"
-            chmod +x "src-tauri/binaries/slider-${TRIPLE}"
+            SLIDER_BIN="/tmp/slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}"
           fi
 
-          echo "=== Sidecar binaries ==="
-          ls -la src-tauri/binaries/
+          # Gzip-compress into embed/ for include_bytes! at compile time
+          gzip -9 -c "$GUST_BIN" > src-tauri/embed/gust.gz
+          gzip -9 -c "$SLIDER_BIN" > src-tauri/embed/slider.gz
+
+          echo "=== Embedded sidecar binaries ==="
+          ls -la src-tauri/embed/
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Strip UPX from Windows binaries (reduces AV false positives)
-        if: matrix.platform == 'windows-latest'
-        shell: bash
-        run: |
-          choco install upx -y 2>/dev/null || true
-          for f in src-tauri/binaries/*.exe; do
-            echo "Decompressing $f ..."
-            upx -d "$f" 2>/dev/null || echo "  (not UPX-packed or already decompressed)"
-          done
-          ls -la src-tauri/binaries/
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -171,14 +162,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-
-      - name: Create placeholder sidecar binaries for Android
-        run: |
-          mkdir -p src-tauri/binaries
-          for target in aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android; do
-            touch "src-tauri/binaries/gust-${target}"
-            touch "src-tauri/binaries/slider-${target}"
-          done
 
       - name: Install frontend dependencies
         run: pnpm install

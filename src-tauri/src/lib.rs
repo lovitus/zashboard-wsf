@@ -171,6 +171,90 @@ fn save_configs(configs: &[TunnelConfig]) {
     }
 }
 
+// --- Embedded sidecar binaries (gzip-compressed) ---
+// CI places real compressed binaries in src-tauri/embed/
+// build.rs creates empty placeholders for dev builds
+const GUST_GZ: &[u8] = include_bytes!("../embed/gust.gz");
+const SLIDER_GZ: &[u8] = include_bytes!("../embed/slider.gz");
+
+fn get_sidecar_cache_dir() -> PathBuf {
+    let dir = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("zashboard")
+        .join("bin");
+    std::fs::create_dir_all(&dir).ok();
+    dir
+}
+
+fn fnv1a_hash(data: &[u8]) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{:016x}", h)
+}
+
+fn extract_embedded_binary(name: &str, compressed: &[u8], target_dir: &PathBuf) -> Result<PathBuf, String> {
+    if compressed.is_empty() {
+        return Err(format!("No embedded {} binary (dev mode)", name));
+    }
+
+    let filename = if cfg!(windows) {
+        format!("{}.exe", name)
+    } else {
+        name.to_string()
+    };
+    let target = target_dir.join(&filename);
+
+    // Hash-based version check: skip re-extraction if already up-to-date
+    let hash = fnv1a_hash(compressed);
+    let marker = target_dir.join(format!(".{}.hash", name));
+    if target.exists() {
+        if let Ok(stored) = std::fs::read_to_string(&marker) {
+            if stored.trim() == hash {
+                return Ok(target);
+            }
+        }
+    }
+
+    // Decompress gzip and write
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    let mut decoder = GzDecoder::new(compressed);
+    let mut data = Vec::new();
+    decoder.read_to_end(&mut data)
+        .map_err(|e| format!("Failed to decompress {}: {}", name, e))?;
+
+    std::fs::write(&target, &data)
+        .map_err(|e| format!("Failed to write {} (antivirus blocking?): {}", target.display(), e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).ok();
+    }
+
+    std::fs::write(&marker, &hash).ok();
+    eprintln!("Extracted embedded binary: {}", target.display());
+    Ok(target)
+}
+
+fn ensure_sidecar_available(sidecar_dir: &PathBuf, tool: &str) -> Result<(), String> {
+    let tool_path = resolve_tool_path(sidecar_dir, tool);
+    if tool_path.exists() {
+        return Ok(());
+    }
+
+    let data = match tool {
+        "gust" => GUST_GZ,
+        "slider" => SLIDER_GZ,
+        _ => return Err(format!("Unknown tool: {}", tool)),
+    };
+
+    extract_embedded_binary(tool, data, sidecar_dir).map(|_| ())
+}
+
 // --- Sidecar resolution ---
 
 fn resolve_sidecar_dir() -> PathBuf {
@@ -194,8 +278,13 @@ fn resolve_sidecar_dir() -> PathBuf {
         eprintln!("WARNING: Could not detect Android native lib dir from /proc/self/maps");
     }
 
-    // Desktop: sidecars are next to the main executable
-    // In dev: they're in src-tauri/binaries/ with target triple suffix
+    // Desktop: use cache dir when embedded binaries are available
+    #[cfg(not(target_os = "android"))]
+    if !GUST_GZ.is_empty() || !SLIDER_GZ.is_empty() {
+        return get_sidecar_cache_dir();
+    }
+
+    // Dev mode fallback: next to executable
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             return dir.to_path_buf();
@@ -268,6 +357,9 @@ fn resolve_tool_path(sidecar_dir: &PathBuf, tool: &str) -> PathBuf {
 }
 
 fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<TunnelProcess, String> {
+    // Ensure binary is available (extract from embedded if needed)
+    ensure_sidecar_available(sidecar_dir, tool)?;
+
     let tool_path = resolve_tool_path(sidecar_dir, tool);
     eprintln!("Starting tunnel: {} {:?}", tool_path.display(), args);
 
@@ -542,13 +634,14 @@ pub fn run() {
 
     let sidecar_dir = resolve_sidecar_dir();
 
-    // Pre-check sidecar binaries exist
+    // Try to extract/verify sidecar binaries
     for tool in &["gust", "slider"] {
-        let path = resolve_tool_path(&sidecar_dir, tool);
-        if path.exists() {
-            eprintln!("Sidecar found: {} -> {}", tool, path.display());
-        } else {
-            eprintln!("WARNING: Sidecar not found: {} (looked at {})", tool, path.display());
+        match ensure_sidecar_available(&sidecar_dir, tool) {
+            Ok(()) => {
+                let path = resolve_tool_path(&sidecar_dir, tool);
+                eprintln!("Sidecar ready: {} -> {}", tool, path.display());
+            }
+            Err(e) => eprintln!("WARNING: Sidecar {} not available: {}", tool, e),
         }
     }
 

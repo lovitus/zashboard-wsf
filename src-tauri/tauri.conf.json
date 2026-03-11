@@ -1,6 +1,6 @@
 {
   "productName": "zashboard",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "identifier": "com.lovitus.zashboard",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -33,10 +33,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "externalBin": [
-      "binaries/gust",
-      "binaries/slider"
     ],
     "windows": {
       "webviewInstallMode": {
