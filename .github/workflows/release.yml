@@ -179,13 +179,53 @@ jobs:
             touch "src-tauri/binaries/gust-${target}"
             touch "src-tauri/binaries/slider-${target}"
           done
-          ls -la src-tauri/binaries/
 
       - name: Install frontend dependencies
         run: pnpm install
 
       - name: Initialize Android project
         run: pnpm tauri android init
+
+      - name: Download sidecar binaries into jniLibs
+        run: |
+          JNILIBS="src-tauri/gen/android/app/src/main/jniLibs"
+
+          # ABI → Go release asset suffix
+          declare -A ABI_MAP=(
+            ["arm64-v8a"]="linux-arm64"
+            ["armeabi-v7a"]="linux-armv7"
+            ["x86"]="linux-386"
+            ["x86_64"]="linux-amd64"
+          )
+
+          for ABI in arm64-v8a armeabi-v7a x86 x86_64; do
+            mkdir -p "$JNILIBS/$ABI"
+            SUFFIX="${ABI_MAP[$ABI]}"
+
+            # gust
+            gh release download "$GUST_TAG" --repo lovitus/gust \
+              -p "gost-${SUFFIX}-${GUST_VERSION}.gz" -D /tmp
+            gunzip -f "/tmp/gost-${SUFFIX}-${GUST_VERSION}.gz"
+            mv "/tmp/gost-${SUFFIX}-${GUST_VERSION}" "$JNILIBS/$ABI/libgust.so"
+            chmod +x "$JNILIBS/$ABI/libgust.so"
+
+            # slider
+            gh release download "$SLIDER_TAG" --repo lovitus/slider \
+              -p "slider-${SUFFIX}-${SLIDER_VERSION}.gz" -D /tmp
+            gunzip -f "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}.gz"
+            mv "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}" "$JNILIBS/$ABI/libslider.so"
+            chmod +x "$JNILIBS/$ABI/libslider.so"
+          done
+
+          echo "=== jniLibs ==="
+          find "$JNILIBS" -type f -exec ls -lh {} \;
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable extractNativeLibs for sidecar execution
+        run: |
+          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+          sed -i 's/<application/<application android:extractNativeLibs="true"/' "$MANIFEST"
 
       - name: Build Android APK
         run: pnpm tauri android build --apk

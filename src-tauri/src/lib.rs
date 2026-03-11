@@ -77,7 +77,27 @@ fn save_configs(configs: &[TunnelConfig]) {
 // --- Sidecar resolution ---
 
 fn resolve_sidecar_dir() -> PathBuf {
-    // In release: sidecars are next to the main executable
+    // On Android, sidecar binaries are packaged as lib*.so in jniLibs
+    // and extracted to the native library directory by the OS.
+    #[cfg(target_os = "android")]
+    {
+        if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+            for line in maps.lines() {
+                if let Some(path_str) = line.split_whitespace().last() {
+                    if path_str.ends_with(".so") && path_str.contains("/lib/") {
+                        let path = PathBuf::from(path_str);
+                        if let Some(parent) = path.parent() {
+                            eprintln!("Android native lib dir: {}", parent.display());
+                            return parent.to_path_buf();
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("WARNING: Could not detect Android native lib dir from /proc/self/maps");
+    }
+
+    // Desktop: sidecars are next to the main executable
     // In dev: they're in src-tauri/binaries/ with target triple suffix
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -88,6 +108,15 @@ fn resolve_sidecar_dir() -> PathBuf {
 }
 
 fn resolve_tool_path(sidecar_dir: &PathBuf, tool: &str) -> PathBuf {
+    // On Android, binaries are named lib<tool>.so in the native lib dir
+    #[cfg(target_os = "android")]
+    {
+        let android_path = sidecar_dir.join(format!("lib{}.so", tool));
+        if android_path.exists() {
+            return android_path;
+        }
+    }
+
     // Try exact name first (release mode: gust.exe / slider.exe next to binary)
     let base = sidecar_dir.join(tool);
     #[cfg(windows)]
