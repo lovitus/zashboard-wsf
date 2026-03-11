@@ -42,24 +42,7 @@
   },
   "plugins": {
     "shell": {
-      "open": true,
-      "scope": [
-        {
-          "name": "gust",
-          "cmd": "gust",
-          "args": true
-        },
-        {
-          "name": "slider",
-          "cmd": "slider",
-          "args": true
-        },
-        {
-          "name": "flyssh",
-          "cmd": "flyssh",
-          "args": true
-        }
-      ]
+      "open": true
     }
   }
 }
