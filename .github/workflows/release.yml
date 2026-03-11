@@ -192,12 +192,48 @@ jobs:
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
+      - name: Sign APK
+        run: |
+          # Decrypt keystore from encrypted zip
+          7z x -pREDACTED_SECRET src-tauri/cert_pwdisAa1xxxx6.zip -o/tmp/ks/
+
+          # Install build-tools for apksigner & zipalign
+          sdkmanager "build-tools;34.0.0"
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          UNSIGNED=$(find "$APK_DIR" -name "*.apk" | head -1)
+          echo "Found APK: $UNSIGNED"
+
+          # Zipalign
+          "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
+          mv "${UNSIGNED}.aligned" "$UNSIGNED"
+
+          # Sign with apksigner
+          "$BT/apksigner" sign \
+            --ks /tmp/ks/zashboard-release.keystore \
+            --ks-pass pass:REDACTED_SECRET \
+            --ks-key-alias zashboard \
+            --key-pass pass:REDACTED_SECRET \
+            "$UNSIGNED"
+
+          # Verify
+          "$BT/apksigner" verify --verbose "$UNSIGNED"
+
+          # Rename to indicate signed
+          SIGNED="${APK_DIR}/zashboard-universal-release.apk"
+          mv "$UNSIGNED" "$SIGNED"
+          echo "Signed APK: $SIGNED"
+
+          # Clean up keystore
+          rm -rf /tmp/ks
+
       - name: Upload APK
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           draft: true
           files: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/universal/release/zashboard-universal-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

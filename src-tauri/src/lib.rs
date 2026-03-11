@@ -9,6 +9,8 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 /// Tunnel configuration for a backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,12 +145,14 @@ fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Tu
     let tool_path = resolve_tool_path(sidecar_dir, tool);
     eprintln!("Starting tunnel: {} {:?}", tool_path.display(), args);
 
-    let mut child = Command::new(&tool_path)
-        .args(args)
+    let mut cmd = Command::new(&tool_path);
+    cmd.args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to start {}: {}", tool_path.display(), e))?;
 
     let logs: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::with_capacity(12)));
