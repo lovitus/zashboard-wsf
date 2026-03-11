@@ -12,6 +12,103 @@ use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 
+// --- Windows Job Object: auto-kill ONLY our child processes on exit ---
+// When the main process exits (gracefully or force-killed by installer),
+// the OS closes the Job Object handle and terminates all assigned children.
+// Other gust/slider instances running outside this app are NOT affected.
+#[cfg(windows)]
+mod job_object {
+    use std::sync::OnceLock;
+
+    static JOB: OnceLock<usize> = OnceLock::new();
+
+    extern "system" {
+        fn CreateJobObjectW(attrs: *const u8, name: *const u16) -> usize;
+        fn SetInformationJobObject(job: usize, class: u32, info: *const u8, len: u32) -> i32;
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> usize;
+        fn AssignProcessToJobObject(job: usize, process: usize) -> i32;
+        fn CloseHandle(handle: usize) -> i32;
+    }
+
+    #[repr(C)]
+    struct BasicLimitInfo {
+        per_process_user_time_limit: i64,
+        per_job_user_time_limit: i64,
+        limit_flags: u32,
+        min_working_set: usize,
+        max_working_set: usize,
+        active_process_limit: u32,
+        affinity: usize,
+        priority_class: u32,
+        scheduling_class: u32,
+    }
+
+    #[repr(C)]
+    struct IoCounters {
+        read_ops: u64, write_ops: u64, other_ops: u64,
+        read_bytes: u64, write_bytes: u64, other_bytes: u64,
+    }
+
+    #[repr(C)]
+    struct ExtendedLimitInfo {
+        basic: BasicLimitInfo,
+        io: IoCounters,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory: usize,
+        peak_job_memory: usize,
+    }
+
+    pub fn init() {
+        const KILL_ON_JOB_CLOSE: u32 = 0x2000;
+        const INFO_CLASS_EXTENDED: u32 = 9;
+
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job == 0 {
+                eprintln!("WARNING: Failed to create Job Object");
+                return;
+            }
+
+            let mut info: ExtendedLimitInfo = std::mem::zeroed();
+            info.basic.limit_flags = KILL_ON_JOB_CLOSE;
+
+            let ok = SetInformationJobObject(
+                job, INFO_CLASS_EXTENDED,
+                &info as *const _ as *const u8,
+                std::mem::size_of::<ExtendedLimitInfo>() as u32,
+            );
+            if ok == 0 {
+                eprintln!("WARNING: Failed to configure Job Object");
+                CloseHandle(job);
+                return;
+            }
+
+            JOB.set(job).ok();
+            eprintln!("Job Object created — child processes will auto-terminate on app exit");
+        }
+    }
+
+    pub fn assign(pid: u32) {
+        let Some(&job) = JOB.get() else { return };
+        const PROCESS_SET_QUOTA: u32 = 0x0100;
+        const PROCESS_TERMINATE: u32 = 0x0001;
+
+        unsafe {
+            let handle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+            if handle == 0 {
+                eprintln!("WARNING: Cannot open child pid {} for job assignment", pid);
+                return;
+            }
+            let ok = AssignProcessToJobObject(job, handle);
+            CloseHandle(handle);
+            if ok == 0 {
+                eprintln!("WARNING: Cannot assign pid {} to job", pid);
+            }
+        }
+    }
+}
+
 /// Tunnel configuration for a backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TunnelConfig {
@@ -183,6 +280,12 @@ fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Tu
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to start {}: {}", tool_path.display(), e))?;
+
+    // Assign to Job Object so this child is auto-killed when our app exits
+    #[cfg(windows)]
+    if let Some(pid) = child.id() {
+        job_object::assign(pid);
+    }
 
     let logs: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::with_capacity(12)));
 
@@ -434,6 +537,9 @@ fn show_or_create_window(handle: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    job_object::init();
+
     let sidecar_dir = resolve_sidecar_dir();
 
     // Pre-check sidecar binaries exist
