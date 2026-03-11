@@ -1,0 +1,66 @@
+{
+  "productName": "zashboard",
+  "version": "0.1.0",
+  "identifier": "com.lovitus.zashboard",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "title": "Zashboard",
+    "windows": [
+      {
+        "title": "Zashboard - Mihomo Dashboard",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 400,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true,
+      "scope": [
+        {
+          "name": "gust",
+          "cmd": "gust",
+          "args": true
+        },
+        {
+          "name": "slider",
+          "cmd": "slider",
+          "args": true
+        },
+        {
+          "name": "flyssh",
+          "cmd": "flyssh",
+          "args": true
+        }
+      ]
+    }
+  }
+}
