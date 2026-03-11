@@ -338,6 +338,47 @@ async fn stop_tunnel(
     })
 }
 
+#[tauri::command]
+async fn add_defender_exclusion(state: State<'_, Mutex<TunnelState>>) -> Result<String, String> {
+    let sidecar_dir = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.sidecar_dir.clone()
+    };
+
+    let dir_str = sidecar_dir.to_string_lossy().to_string();
+    eprintln!("Adding Defender exclusion for: {}", dir_str);
+
+    // Write a temp .ps1 script to avoid nested quoting issues
+    let temp_script = std::env::temp_dir().join("zashboard-av-fix.ps1");
+    let script_content = format!("Add-MpPreference -ExclusionPath '{}'\n", dir_str);
+    std::fs::write(&temp_script, &script_content)
+        .map_err(|e| format!("Failed to write temp script: {}", e))?;
+
+    // Use Start-Process -Verb RunAs to trigger UAC elevation
+    let output = tokio::process::Command::new("powershell")
+        .args(&[
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"{}\"' -Verb RunAs -Wait",
+                temp_script.display()
+            ),
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
+
+    // Clean up temp script
+    let _ = std::fs::remove_file(&temp_script);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Exclusion failed (UAC denied?): {}", stderr.trim()));
+    }
+
+    Ok(dir_str)
+}
+
 // --- App entry ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -371,6 +412,7 @@ pub fn run() {
             remove_tunnel,
             start_tunnel,
             stop_tunnel,
+            add_defender_exclusion,
         ])
         .setup(move |app| {
             // --- System Tray (desktop only) ---

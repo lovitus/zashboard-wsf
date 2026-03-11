@@ -70,6 +70,26 @@
       </div>
     </div>
 
+    <!-- Antivirus warning banner -->
+    <div
+      v-if="avBlocked"
+      class="bg-warning/10 border-warning flex flex-col gap-2 rounded-lg border p-3"
+    >
+      <div class="text-warning text-sm font-medium">
+        ⚠ {{ $t('tunnelAvBlocked') }}
+      </div>
+      <div class="text-base-content/70 text-xs">
+        {{ $t('tunnelAvBlockedDesc') }}
+      </div>
+      <button
+        class="btn btn-warning btn-xs btn-outline self-start"
+        :disabled="fixingAv"
+        @click="handleFixAv"
+      >
+        {{ fixingAv ? '...' : $t('tunnelAvFix') }}
+      </button>
+    </div>
+
     <!-- Empty state -->
     <div
       v-if="tunnels.length === 0"
@@ -155,6 +175,7 @@ import {
   startTunnel,
   stopTunnel,
   tunnelStatuses,
+  addDefenderExclusion,
 } from '@/api/tunnel'
 import type { RustTunnelConfig } from '@/api/tunnel'
 import { showNotification } from '@/helper/notification'
@@ -170,6 +191,8 @@ const { t } = useI18n()
 const tunnels = ref<RustTunnelConfig[]>([])
 const loading = reactive(new Set<string>())
 const editingId = ref<string | null>(null)
+const avBlocked = ref(false)
+const fixingAv = ref(false)
 
 const tunnelForm = reactive({
   name: '',
@@ -208,7 +231,11 @@ async function handleStart(id: string) {
     await new Promise((r) => setTimeout(r, 500))
     await getTunnelStatuses()
   } catch (e) {
-    showNotification({ content: `${t('tunnelStart')} failed: ${e}`, type: 'alert-error' })
+    const msg = String(e)
+    if (msg.includes('virus') || msg.includes('os error 225')) {
+      avBlocked.value = true
+    }
+    showNotification({ content: `${t('tunnelStart')} failed: ${msg}`, type: 'alert-error' })
   } finally {
     loading.delete(id)
   }
@@ -286,6 +313,19 @@ async function handleSave() {
     showNotification({ content: t('tunnelSaved'), type: 'alert-success' })
   } catch (e) {
     showNotification({ content: `Save failed: ${e}`, type: 'alert-error' })
+  }
+}
+
+async function handleFixAv() {
+  fixingAv.value = true
+  try {
+    const dir = await addDefenderExclusion()
+    avBlocked.value = false
+    showNotification({ content: `${t('tunnelAvFixed')}: ${dir}`, type: 'alert-success' })
+  } catch (e) {
+    showNotification({ content: `${t('tunnelAvFix')} failed: ${e}`, type: 'alert-error' })
+  } finally {
+    fixingAv.value = false
   }
 }
 

@@ -96,6 +96,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Strip UPX from Windows binaries (reduces AV false positives)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          choco install upx -y 2>/dev/null || true
+          for f in src-tauri/binaries/*.exe; do
+            echo "Decompressing $f ..."
+            upx -d "$f" 2>/dev/null || echo "  (not UPX-packed or already decompressed)"
+          done
+          ls -la src-tauri/binaries/
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

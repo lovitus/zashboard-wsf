@@ -315,6 +315,10 @@ const zh: LANG_MESSAGE = {
   tunnelSelectBackend: '关联后端（可选）',
   tunnelSaved: '隧道已保存',
   tunnelName: '隧道名称',
+  tunnelAvBlocked: '杀毒软件拦截了隧道程序',
+  tunnelAvBlockedDesc: 'Windows Defender 误报了隧道工具。点击下方添加排除项（需要管理员权限，会弹出 UAC 提示）。',
+  tunnelAvFix: '添加 Defender 排除项',
+  tunnelAvFixed: '已添加排除项',
 }
 
 export default zh

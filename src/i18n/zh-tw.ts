@@ -315,6 +315,10 @@ const zhTW: LANG_MESSAGE = {
   tunnelSelectBackend: '關聯後端（可選）',
   tunnelSaved: '隧道已儲存',
   tunnelName: '隧道名稱',
+  tunnelAvBlocked: '殺毒軟體攔截了隧道程式',
+  tunnelAvBlockedDesc: 'Windows Defender 誤報了隧道工具。點擊下方新增排除項（需要管理員權限，會彈出 UAC 提示）。',
+  tunnelAvFix: '新增 Defender 排除項',
+  tunnelAvFixed: '已新增排除項',
 }
 
 export default zhTW

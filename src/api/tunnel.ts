@@ -60,6 +60,11 @@ export async function stopTunnel(id: string): Promise<RustTunnelStatus> {
   return status
 }
 
+export async function addDefenderExclusion(): Promise<string> {
+  if (!isTauri) throw new Error('Not in Tauri')
+  return await invoke<string>('add_defender_exclusion')
+}
+
 // Convert frontend TunnelConfig to Rust format
 export function toRustTunnelConfig(
   backendUuid: string,

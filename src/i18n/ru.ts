@@ -321,6 +321,10 @@ const ru: LANG_MESSAGE = {
   tunnelSelectBackend: 'Привязать к бэкенду (необяз.)',
   tunnelSaved: 'Туннель сохранён',
   tunnelName: 'Имя туннеля',
+  tunnelAvBlocked: 'Антивирус блокирует туннельные программы',
+  tunnelAvBlockedDesc: 'Windows Defender ошибочно заблокировал туннельный инструмент. Нажмите ниже, чтобы добавить исключение (требуются права администратора).',
+  tunnelAvFix: 'Добавить исключение Defender',
+  tunnelAvFixed: 'Исключение добавлено для',
 }
 
 export default ru

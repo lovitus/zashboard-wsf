@@ -318,6 +318,10 @@ const en = {
   tunnelSelectBackend: 'Link to backend (optional)',
   tunnelSaved: 'Tunnel saved',
   tunnelName: 'Tunnel Name',
+  tunnelAvBlocked: 'Antivirus is blocking sidecar binaries',
+  tunnelAvBlockedDesc: 'Windows Defender flagged the tunnel tool as a false positive. Click below to add an exclusion (requires admin privileges).',
+  tunnelAvFix: 'Add Defender Exclusion',
+  tunnelAvFixed: 'Exclusion added for',
 }
 
 export type LANG_MESSAGE = typeof en
