@@ -3,6 +3,8 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 #[cfg(desktop)]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
@@ -11,6 +13,9 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
+
+#[cfg(desktop)]
+static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 
 // --- Windows Job Object: auto-kill ONLY our child processes on exit ---
 // When the main process exits (gracefully or force-killed by installer),
@@ -142,6 +147,7 @@ struct TunnelState {
     processes: HashMap<String, TunnelProcess>,
     configs: Vec<TunnelConfig>,
     sidecar_dir: PathBuf,
+    config_path: PathBuf,
 }
 
 // --- Persistence ---
@@ -154,20 +160,38 @@ fn get_config_path() -> PathBuf {
     dir.join("tunnels.json")
 }
 
-fn load_configs() -> Vec<TunnelConfig> {
-    let path = get_config_path();
+fn load_configs(path: &PathBuf) -> Vec<TunnelConfig> {
     if path.exists() {
-        let data = std::fs::read_to_string(&path).unwrap_or_default();
-        serde_json::from_str(&data).unwrap_or_default()
+        match std::fs::read_to_string(path) {
+            Ok(data) => {
+                let configs: Vec<TunnelConfig> = serde_json::from_str(&data).unwrap_or_default();
+                eprintln!("Loaded {} tunnel configs from {}", configs.len(), path.display());
+                configs
+            }
+            Err(e) => {
+                eprintln!("WARNING: Failed to read config {}: {}", path.display(), e);
+                Vec::new()
+            }
+        }
     } else {
+        eprintln!("No config file at {}, starting fresh", path.display());
         Vec::new()
     }
 }
 
-fn save_configs(configs: &[TunnelConfig]) {
-    let path = get_config_path();
-    if let Ok(data) = serde_json::to_string_pretty(configs) {
-        std::fs::write(path, data).ok();
+fn save_configs(configs: &[TunnelConfig], path: &PathBuf) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    match serde_json::to_string_pretty(configs) {
+        Ok(data) => {
+            if let Err(e) = std::fs::write(path, &data) {
+                eprintln!("WARNING: Failed to save configs to {}: {}", path.display(), e);
+            } else {
+                eprintln!("Saved {} tunnel configs to {}", configs.len(), path.display());
+            }
+        }
+        Err(e) => eprintln!("WARNING: Failed to serialize configs: {}", e),
     }
 }
 
@@ -263,12 +287,30 @@ fn resolve_sidecar_dir() -> PathBuf {
     #[cfg(target_os = "android")]
     {
         if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+            // First pass: look for our app's package name
             for line in maps.lines() {
                 if let Some(path_str) = line.split_whitespace().last() {
-                    if path_str.ends_with(".so") && path_str.contains("/lib/") {
+                    if path_str.contains("com.lovitus.zashboard") && path_str.ends_with(".so") {
                         let path = PathBuf::from(path_str);
                         if let Some(parent) = path.parent() {
-                            eprintln!("Android native lib dir: {}", parent.display());
+                            eprintln!("Android native lib dir (by package): {}", parent.display());
+                            return parent.to_path_buf();
+                        }
+                    }
+                }
+            }
+            // Second pass: any non-system .so with /lib/ in path
+            for line in maps.lines() {
+                if let Some(path_str) = line.split_whitespace().last() {
+                    if path_str.ends_with(".so")
+                        && path_str.contains("/lib/")
+                        && !path_str.starts_with("/system/")
+                        && !path_str.starts_with("/vendor/")
+                        && !path_str.starts_with("/apex/")
+                    {
+                        let path = PathBuf::from(path_str);
+                        if let Some(parent) = path.parent() {
+                            eprintln!("Android native lib dir (fallback): {}", parent.display());
                             return parent.to_path_buf();
                         }
                     }
@@ -361,6 +403,41 @@ fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Tu
     ensure_sidecar_available(sidecar_dir, tool)?;
 
     let tool_path = resolve_tool_path(sidecar_dir, tool);
+
+    // Pre-launch diagnostics
+    if !tool_path.exists() {
+        return Err(format!(
+            "Binary not found: {}. Sidecar dir contents: {:?}",
+            tool_path.display(),
+            std::fs::read_dir(sidecar_dir)
+                .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect::<Vec<_>>())
+                .unwrap_or_default()
+        ));
+    }
+
+    match std::fs::metadata(&tool_path) {
+        Ok(meta) => {
+            if meta.len() == 0 {
+                return Err(format!("Binary is empty (0 bytes): {}", tool_path.display()));
+            }
+            eprintln!("Binary: {} (size: {} bytes)", tool_path.display(), meta.len());
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = meta.permissions().mode();
+                if mode & 0o111 == 0 {
+                    eprintln!("Binary not executable (mode: {:o}), fixing...", mode);
+                    std::fs::set_permissions(&tool_path, std::fs::Permissions::from_mode(0o755))
+                        .map_err(|e| format!("Cannot set +x on {}: {}", tool_path.display(), e))?;
+                }
+            }
+        }
+        Err(e) => {
+            return Err(format!("Cannot stat {}: {}", tool_path.display(), e));
+        }
+    }
+
     eprintln!("Starting tunnel: {} {:?}", tool_path.display(), args);
 
     let mut cmd = Command::new(&tool_path);
@@ -371,7 +448,16 @@ fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Tu
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     let mut child = cmd.spawn()
-        .map_err(|e| format!("Failed to start {}: {}", tool_path.display(), e))?;
+        .map_err(|e| {
+            let msg = format!("Failed to start {}: {}", tool_path.display(), e);
+            #[cfg(unix)]
+            {
+                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    return format!("{} (Permission denied — SELinux or filesystem restriction?)", msg);
+                }
+            }
+            msg
+        })?;
 
     // Assign to Job Object so this child is auto-killed when our app exits
     #[cfg(windows)]
@@ -487,7 +573,7 @@ async fn save_tunnel(
     } else {
         s.configs.push(config);
     }
-    save_configs(&s.configs);
+    save_configs(&s.configs, &s.config_path);
     Ok(())
 }
 
@@ -501,7 +587,7 @@ async fn remove_tunnel(
         let mut s = state.lock().map_err(|e| e.to_string())?;
         process_to_kill = s.processes.remove(&id);
         s.configs.retain(|c| c.id != id);
-        save_configs(&s.configs);
+        save_configs(&s.configs, &s.config_path);
     }
 
     if let Some(mut process) = process_to_kill {
@@ -532,6 +618,34 @@ async fn start_tunnel(
     {
         let mut s = state.lock().map_err(|e| e.to_string())?;
         s.processes.insert(id.clone(), process);
+    }
+
+    // Wait briefly then check if process crashed immediately
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        if let Some(proc) = s.processes.get_mut(&id) {
+            match proc.child.try_wait() {
+                Ok(Some(exit_status)) => {
+                    let logs: Vec<String> = proc.logs.lock().unwrap().iter().cloned().collect();
+                    let error_msg = format!(
+                        "Process exited immediately ({}). Output: {}",
+                        exit_status,
+                        if logs.is_empty() { "(no output captured)".to_string() } else { logs.join(" | ") }
+                    );
+                    eprintln!("Tunnel {} early exit: {}", id, error_msg);
+                    s.processes.remove(&id);
+                    return Err(error_msg);
+                }
+                Ok(None) => {
+                    eprintln!("Tunnel {} is running (pid: {:?})", id, pid);
+                }
+                Err(e) => {
+                    eprintln!("WARNING: try_wait error for tunnel {}: {}", id, e);
+                }
+            }
+        }
     }
 
     Ok(TunnelStatus {
@@ -645,10 +759,15 @@ pub fn run() {
         }
     }
 
+    let config_path = get_config_path();
+    eprintln!("Initial config path: {}", config_path.display());
+    eprintln!("Sidecar dir: {}", sidecar_dir.display());
+
     let ts = TunnelState {
         processes: HashMap::new(),
-        configs: load_configs(),
+        configs: load_configs(&config_path),
         sidecar_dir: sidecar_dir.clone(),
+        config_path,
     };
 
     tauri::Builder::default()
@@ -665,6 +784,27 @@ pub fn run() {
             add_defender_exclusion,
         ])
         .setup(move |app| {
+            // --- Mobile: fix config path using Tauri's app data dir ---
+            #[cfg(mobile)]
+            {
+                match app.path().app_data_dir() {
+                    Ok(app_dir) => {
+                        std::fs::create_dir_all(&app_dir).ok();
+                        let mobile_config_path = app_dir.join("tunnels.json");
+                        eprintln!("Mobile config path: {}", mobile_config_path.display());
+
+                        let state = app.state::<Mutex<TunnelState>>();
+                        let mut s = state.lock().unwrap();
+                        // Reload configs from the correct mobile path
+                        s.configs = load_configs(&mobile_config_path);
+                        s.config_path = mobile_config_path;
+                    }
+                    Err(e) => {
+                        eprintln!("WARNING: Cannot resolve app data dir: {}", e);
+                    }
+                }
+            }
+
             // --- System Tray (desktop only) ---
             #[cfg(desktop)]
             {
@@ -686,6 +826,7 @@ pub fn run() {
                                 show_or_create_window(app);
                             }
                             "quit" => {
+                                SHOULD_EXIT.store(true, Ordering::SeqCst);
                                 app.exit(0);
                             }
                             _ => {}
@@ -736,7 +877,10 @@ pub fn run() {
         .run(|_app_handle, event| {
             #[cfg(desktop)]
             if let tauri::RunEvent::ExitRequested { api, .. } = &event {
-                api.prevent_exit();
+                // Only prevent exit for window-close events, not explicit Quit
+                if !SHOULD_EXIT.load(Ordering::SeqCst) {
+                    api.prevent_exit();
+                }
             }
         });
 }
