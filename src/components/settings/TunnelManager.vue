@@ -14,10 +14,8 @@
             class="inline-block h-2.5 w-2.5 rounded-full"
             :class="isTunnelRunning(tunnel.id) ? 'bg-success' : 'bg-error'"
           ></span>
-          <span class="font-medium">{{ tunnel.tool }}</span>
-          <span class="text-base-content/60 text-xs">
-            :{{ tunnel.local_port }}
-          </span>
+          <span class="font-medium">{{ tunnel.name || tunnel.id.slice(0, 8) }}</span>
+          <span class="text-base-content/50 text-xs">[{{ tunnel.tool }}]</span>
           <span
             class="badge badge-xs"
             :class="isTunnelRunning(tunnel.id) ? 'badge-success' : 'badge-error'"
@@ -59,17 +57,16 @@
       <div class="text-base-content/50 break-all text-xs">
         {{ tunnel.args.join(' ') }}
       </div>
+      <!-- Last 10 log lines -->
       <div
-        v-if="getBackendLabel(tunnel.backend_uuid)"
-        class="text-base-content/40 text-xs"
+        v-if="getTunnelLogs(tunnel.id).length > 0"
+        class="bg-base-300 max-h-32 overflow-auto rounded p-2 font-mono text-xs leading-tight"
       >
-        → {{ getBackendLabel(tunnel.backend_uuid) }}
-      </div>
-      <div
-        v-if="getTunnelError(tunnel.id)"
-        class="text-error text-xs"
-      >
-        {{ getTunnelError(tunnel.id) }}
+        <div
+          v-for="(line, i) in getTunnelLogs(tunnel.id)"
+          :key="i"
+          class="text-base-content/70 whitespace-pre-wrap break-all"
+        >{{ line }}</div>
       </div>
     </div>
 
@@ -81,11 +78,16 @@
       {{ $t('tunnelEmpty') }}
     </div>
 
-    <!-- Add new tunnel form -->
+    <!-- Add/edit tunnel form -->
     <div class="bg-base-200 flex flex-col gap-2 rounded-lg p-3">
       <div class="text-sm font-medium">
         {{ editingId ? $t('tunnelEdit') : $t('tunnelAdd') }}
       </div>
+      <input
+        class="input input-xs w-full"
+        v-model="tunnelForm.name"
+        :placeholder="$t('tunnelName')"
+      />
       <div class="flex gap-2">
         <select
           class="select select-xs w-24"
@@ -98,10 +100,7 @@
           class="select select-xs flex-1"
           v-model="tunnelForm.backend_uuid"
         >
-          <option
-            value=""
-            disabled
-          >
+          <option value="">
             {{ $t('tunnelSelectBackend') }}
           </option>
           <option
@@ -113,20 +112,12 @@
           </option>
         </select>
       </div>
-      <div class="flex flex-col gap-1">
-        <input
-          class="input input-xs w-full"
-          v-model="tunnelForm.args"
-          :placeholder="argsPlaceholder"
-        />
-      </div>
+      <input
+        class="input input-xs w-full"
+        v-model="tunnelForm.args"
+        :placeholder="argsPlaceholder"
+      />
       <div class="flex items-center gap-2">
-        <label class="text-xs">{{ $t('tunnelLocalPort') }}</label>
-        <input
-          class="input input-xs w-20"
-          type="number"
-          v-model="tunnelForm.localPort"
-        />
         <label class="flex cursor-pointer items-center gap-1">
           <input
             type="checkbox"
@@ -169,6 +160,7 @@ import type { RustTunnelConfig } from '@/api/tunnel'
 import { showNotification } from '@/helper/notification'
 import { getLabelFromBackend } from '@/helper/utils'
 import { backendList } from '@/store/setup'
+// getLabelFromBackend used in template via backendList options
 import { PencilIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -180,18 +172,18 @@ const loading = reactive(new Set<string>())
 const editingId = ref<string | null>(null)
 
 const tunnelForm = reactive({
+  name: '',
   tool: 'slider',
   backend_uuid: '',
   args: '',
-  localPort: '19090',
   autoStart: false,
 })
 
 const argsPlaceholder = computed(() => {
   if (tunnelForm.tool === 'slider') {
-    return '-listen ltcp://:19090/TARGET_HOST:PORT -forward socks5://PROXY:PORT'
+    return '-listen ltcp://:LOCAL_PORT/TARGET_HOST:PORT -forward socks5://PROXY:PORT'
   } else if (tunnelForm.tool === 'gust') {
-    return '-L tcp://:19090/TARGET_HOST:PORT -F relay+ssh://user@HOST:PORT'
+    return '-L tcp://:LOCAL_PORT/TARGET_HOST:PORT -F relay+ssh://user@HOST:PORT'
   }
   return ''
 })
@@ -200,13 +192,8 @@ const isTunnelRunning = (id: string) => {
   return tunnelStatuses.value.get(id)?.running === true
 }
 
-const getTunnelError = (id: string) => {
-  return tunnelStatuses.value.get(id)?.error || null
-}
-
-const getBackendLabel = (uuid: string) => {
-  const b = backendList.value.find((b) => b.uuid === uuid)
-  return b ? getLabelFromBackend(b) : ''
+const getTunnelLogs = (id: string) => {
+  return tunnelStatuses.value.get(id)?.logs || []
 }
 
 async function refreshTunnels() {
@@ -218,6 +205,7 @@ async function handleStart(id: string) {
   loading.add(id)
   try {
     await startTunnel(id)
+    await new Promise((r) => setTimeout(r, 500))
     await getTunnelStatuses()
   } catch (e) {
     showNotification({ content: `${t('tunnelStart')} failed: ${e}`, type: 'alert-error' })
@@ -252,37 +240,42 @@ async function handleDelete(id: string) {
 
 function editTunnel(tunnel: RustTunnelConfig) {
   editingId.value = tunnel.id
+  tunnelForm.name = tunnel.name
   tunnelForm.tool = tunnel.tool
   tunnelForm.backend_uuid = tunnel.backend_uuid
   tunnelForm.args = tunnel.args.join(' ')
-  tunnelForm.localPort = String(tunnel.local_port)
   tunnelForm.autoStart = tunnel.auto_start
 }
 
 function resetForm() {
   editingId.value = null
+  tunnelForm.name = ''
   tunnelForm.tool = 'slider'
   tunnelForm.backend_uuid = ''
   tunnelForm.args = ''
-  tunnelForm.localPort = '19090'
   tunnelForm.autoStart = false
 }
 
 async function handleSave() {
+  if (!tunnelForm.name.trim()) {
+    showNotification({ content: t('tunnelName') + ' required', type: 'alert-warning' })
+    return
+  }
   if (!tunnelForm.args.trim()) {
     showNotification({ content: t('tunnelArgs') + ' required', type: 'alert-warning' })
     return
   }
 
-  const id = editingId.value || tunnelForm.backend_uuid || crypto.randomUUID()
+  const id = editingId.value || crypto.randomUUID()
   const config: RustTunnelConfig = {
     id,
-    backend_uuid: tunnelForm.backend_uuid || id,
+    name: tunnelForm.name.trim(),
+    backend_uuid: tunnelForm.backend_uuid,
     tool: tunnelForm.tool,
     args: tunnelForm.args
       .split(/\s+/)
       .filter((a) => a.length > 0),
-    local_port: parseInt(tunnelForm.localPort) || 19090,
+    local_port: 0,
     auto_start: tunnelForm.autoStart,
   }
 
@@ -300,7 +293,7 @@ let statusInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   await refreshTunnels()
-  statusInterval = setInterval(() => getTunnelStatuses(), 5000)
+  statusInterval = setInterval(() => getTunnelStatuses(), 3000)
 })
 
 onUnmounted(() => {

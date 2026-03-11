@@ -1,22 +1,26 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 #[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, State};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 
 /// Tunnel configuration for a backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TunnelConfig {
     pub id: String,
+    #[serde(default)]
+    pub name: String,
     pub backend_uuid: String,
     /// "gust" or "slider"
     pub tool: String,
     pub args: Vec<String>,
+    #[serde(default)]
     pub local_port: u16,
     pub auto_start: bool,
 }
@@ -27,10 +31,16 @@ pub struct TunnelStatus {
     pub running: bool,
     pub pid: Option<u32>,
     pub error: Option<String>,
+    pub logs: Vec<String>,
+}
+
+struct TunnelProcess {
+    child: Child,
+    logs: Arc<Mutex<VecDeque<String>>>,
 }
 
 struct TunnelState {
-    processes: HashMap<String, Child>,
+    processes: HashMap<String, TunnelProcess>,
     configs: Vec<TunnelConfig>,
     sidecar_dir: PathBuf,
 }
@@ -129,17 +139,53 @@ fn resolve_tool_path(sidecar_dir: &PathBuf, tool: &str) -> PathBuf {
     base
 }
 
-fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Child, String> {
+fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<TunnelProcess, String> {
     let tool_path = resolve_tool_path(sidecar_dir, tool);
     eprintln!("Starting tunnel: {} {:?}", tool_path.display(), args);
 
-    Command::new(&tool_path)
+    let mut child = Command::new(&tool_path)
         .args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| format!("Failed to start {}: {}", tool_path.display(), e))
+        .map_err(|e| format!("Failed to start {}: {}", tool_path.display(), e))?;
+
+    let logs: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::with_capacity(12)));
+
+    // Spawn stdout reader so the process doesn't block on full pipe buffer
+    if let Some(stdout) = child.stdout.take() {
+        let logs_clone = logs.clone();
+        tokio::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let mut buf = logs_clone.lock().unwrap();
+                if buf.len() >= 10 {
+                    buf.pop_front();
+                }
+                buf.push_back(line);
+            }
+        });
+    }
+
+    // Spawn stderr reader
+    if let Some(stderr) = child.stderr.take() {
+        let logs_clone = logs.clone();
+        tokio::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let mut buf = logs_clone.lock().unwrap();
+                if buf.len() >= 10 {
+                    buf.pop_front();
+                }
+                buf.push_back(line);
+            }
+        });
+    }
+
+    Ok(TunnelProcess { child, logs })
 }
 
 // --- Tauri Commands ---
@@ -161,29 +207,38 @@ async fn get_tunnel_statuses(
     let mut dead_ids = Vec::new();
 
     for id in &ids {
-        let running = if let Some(child) = s.processes.get_mut(id) {
-            match child.try_wait() {
+        if let Some(process) = s.processes.get_mut(id) {
+            let running = match process.child.try_wait() {
                 Ok(Some(_)) => false,
                 Ok(None) => true,
                 Err(_) => false,
-            }
-        } else {
-            false
-        };
+            };
 
-        let pid = if running {
-            s.processes.get(id).and_then(|c| c.id())
-        } else {
-            dead_ids.push(id.clone());
-            None
-        };
+            let pid = if running {
+                process.child.id()
+            } else {
+                dead_ids.push(id.clone());
+                None
+            };
 
-        statuses.push(TunnelStatus {
-            id: id.clone(),
-            running,
-            pid,
-            error: None,
-        });
+            let logs: Vec<String> = process.logs.lock().unwrap().iter().cloned().collect();
+
+            statuses.push(TunnelStatus {
+                id: id.clone(),
+                running,
+                pid,
+                error: None,
+                logs,
+            });
+        } else {
+            statuses.push(TunnelStatus {
+                id: id.clone(),
+                running: false,
+                pid: None,
+                error: None,
+                logs: Vec::new(),
+            });
+        }
     }
 
     for id in dead_ids {
@@ -213,16 +268,16 @@ async fn remove_tunnel(
     id: String,
     state: State<'_, Mutex<TunnelState>>,
 ) -> Result<(), String> {
-    let child_to_kill;
+    let process_to_kill;
     {
         let mut s = state.lock().map_err(|e| e.to_string())?;
-        child_to_kill = s.processes.remove(&id);
+        process_to_kill = s.processes.remove(&id);
         s.configs.retain(|c| c.id != id);
         save_configs(&s.configs);
     }
 
-    if let Some(mut child) = child_to_kill {
-        child.kill().await.ok();
+    if let Some(mut process) = process_to_kill {
+        process.child.kill().await.ok();
     }
 
     Ok(())
@@ -243,12 +298,12 @@ async fn start_tunnel(
         (s.sidecar_dir.clone(), config.tool.clone(), config.args.clone())
     };
 
-    let child = spawn_tunnel(&sidecar_dir, &tool, &args)?;
-    let pid = child.id();
+    let process = spawn_tunnel(&sidecar_dir, &tool, &args)?;
+    let pid = process.child.id();
 
     {
         let mut s = state.lock().map_err(|e| e.to_string())?;
-        s.processes.insert(id.clone(), child);
+        s.processes.insert(id.clone(), process);
     }
 
     Ok(TunnelStatus {
@@ -256,6 +311,7 @@ async fn start_tunnel(
         running: true,
         pid,
         error: None,
+        logs: Vec::new(),
     })
 }
 
@@ -264,13 +320,13 @@ async fn stop_tunnel(
     id: String,
     state: State<'_, Mutex<TunnelState>>,
 ) -> Result<TunnelStatus, String> {
-    let child_to_kill = {
+    let process_to_kill = {
         let mut s = state.lock().map_err(|e| e.to_string())?;
         s.processes.remove(&id)
     };
 
-    if let Some(mut child) = child_to_kill {
-        child.kill().await.ok();
+    if let Some(mut process) = process_to_kill {
+        process.child.kill().await.ok();
     }
 
     Ok(TunnelStatus {
@@ -278,6 +334,7 @@ async fn stop_tunnel(
         running: false,
         pid: None,
         error: None,
+        logs: Vec::new(),
     })
 }
 
@@ -384,10 +441,10 @@ pub fn run() {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 for (id, tool, args) in auto_start_configs {
                     match spawn_tunnel(&sidecar_dir_clone, &tool, &args) {
-                        Ok(child) => {
+                        Ok(process) => {
                             let state = handle.state::<Mutex<TunnelState>>();
                             let mut s = state.lock().unwrap();
-                            s.processes.insert(id.clone(), child);
+                            s.processes.insert(id.clone(), process);
                             eprintln!("Auto-started tunnel: {}", id);
                         }
                         Err(e) => {

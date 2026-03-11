@@ -5,6 +5,7 @@ export const isTauri = typeof __IS_TAURI__ !== 'undefined' && __IS_TAURI__
 
 export interface RustTunnelConfig {
   id: string
+  name: string
   backend_uuid: string
   tool: string
   args: string[]
@@ -17,6 +18,7 @@ export interface RustTunnelStatus {
   running: boolean
   pid: number | null
   error: string | null
+  logs: string[]
 }
 
 export const tunnelStatuses = ref<Map<string, RustTunnelStatus>>(new Map())
@@ -65,6 +67,7 @@ export function toRustTunnelConfig(
 ): RustTunnelConfig {
   return {
     id: backendUuid,
+    name: '',
     backend_uuid: backendUuid,
     tool: tunnel.tool,
     args: tunnel.args.split(/\s+/).filter((a) => a.length > 0),

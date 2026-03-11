@@ -314,6 +314,7 @@ const zhTW: LANG_MESSAGE = {
   tunnelEdit: '編輯隧道',
   tunnelSelectBackend: '關聯後端（可選）',
   tunnelSaved: '隧道已儲存',
+  tunnelName: '隧道名稱',
 }
 
 export default zhTW

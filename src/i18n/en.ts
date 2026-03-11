@@ -317,6 +317,7 @@ const en = {
   tunnelEdit: 'Edit Tunnel',
   tunnelSelectBackend: 'Link to backend (optional)',
   tunnelSaved: 'Tunnel saved',
+  tunnelName: 'Tunnel Name',
 }
 
 export type LANG_MESSAGE = typeof en

@@ -320,6 +320,7 @@ const ru: LANG_MESSAGE = {
   tunnelEdit: 'Редактировать туннель',
   tunnelSelectBackend: 'Привязать к бэкенду (необяз.)',
   tunnelSaved: 'Туннель сохранён',
+  tunnelName: 'Имя туннеля',
 }
 
 export default ru
