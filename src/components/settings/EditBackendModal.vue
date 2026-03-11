@@ -105,7 +105,6 @@
               >
                 <option value="slider">Slider</option>
                 <option value="gust">Gust</option>
-                <option value="flyssh">FlySsh</option>
               </select>
             </div>
             <div class="flex flex-col gap-1">
@@ -162,7 +161,7 @@
 
 <script setup lang="ts">
 import { isBackendAvailable } from '@/api'
-import { isTauri, saveTunnel, removeTunnel, toRustTunnelConfig } from '@/api/tunnel'
+import { isTauri, saveTunnel, removeTunnel, startTunnel, toRustTunnelConfig } from '@/api/tunnel'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import TextInput from '@/components/common/TextInput.vue'
 import { showNotification } from '@/helper/notification'
@@ -210,7 +209,7 @@ const tunnelPlaceholder = computed(() => {
   } else if (tunnelForm.tool === 'gust') {
     return '-L tcp://:19090/127.0.0.1:9090 -F relay+ssh://user@host:22'
   }
-  return '-L 19090:127.0.0.1:9090 user@host'
+  return ''
 })
 
 const selectedBackend = computed(() => {
@@ -286,6 +285,40 @@ const handleSave = async () => {
       ...editForm.value,
     }
 
+    // Save tunnel config
+    const tunnelConfig = tunnelEnabled.value
+      ? {
+          enabled: true,
+          tool: tunnelForm.tool as 'gust' | 'slider',
+          args: tunnelForm.args,
+          localPort: parseInt(tunnelForm.localPort) || 19090,
+          autoStart: tunnelForm.autoStart,
+        }
+      : undefined
+
+    // Sync tunnel to Rust backend and auto-start if enabled
+    if (isTauriApp && tunnelConfig?.enabled) {
+      try {
+        const rustConfig = toRustTunnelConfig(selectedBackend.value.uuid, tunnelConfig)
+        await saveTunnel(rustConfig)
+        // Auto-start tunnel before validation so the backend is reachable
+        await startTunnel(selectedBackend.value.uuid)
+        // Wait for tunnel to establish connection
+        await new Promise((r) => setTimeout(r, 1500))
+      } catch (e) {
+        showNotification({
+          content: `Tunnel error: ${e}`,
+          type: 'alert-warning',
+        })
+      }
+    } else if (isTauriApp) {
+      try {
+        await removeTunnel(selectedBackend.value.uuid)
+      } catch {
+        // ignore if tunnel didn't exist
+      }
+    }
+
     const isAvailable = await isBackendAvailable(testBackend, 10000)
 
     if (!isAvailable) {
@@ -296,35 +329,7 @@ const handleSave = async () => {
       return
     }
 
-    // Save tunnel config
-    const tunnelConfig = tunnelEnabled.value
-      ? {
-          enabled: true,
-          tool: tunnelForm.tool as 'gust' | 'slider' | 'flyssh',
-          args: tunnelForm.args,
-          localPort: parseInt(tunnelForm.localPort) || 19090,
-          autoStart: tunnelForm.autoStart,
-        }
-      : undefined
-
     updateBackend(selectedBackend.value.uuid, { ...editForm.value, tunnel: tunnelConfig })
-
-    // Sync tunnel to Rust backend
-    if (isTauriApp && tunnelConfig?.enabled) {
-      try {
-        await saveTunnel(
-          toRustTunnelConfig(selectedBackend.value.uuid, tunnelConfig),
-        )
-      } catch (e) {
-        console.warn('Failed to save tunnel config:', e)
-      }
-    } else if (isTauriApp) {
-      try {
-        await removeTunnel(selectedBackend.value.uuid)
-      } catch {
-        // ignore if tunnel didn't exist
-      }
-    }
 
     showNotification({
       content: t('backendConfigSaved'),

@@ -93,29 +93,60 @@
         <template #item="{ element }">
           <div
             :key="element.uuid"
-            class="flex items-center gap-2"
+            class="flex flex-col gap-1"
           >
-            <button class="btn btn-circle btn-ghost btn-sm">
-              <ChevronUpDownIcon class="h-4 w-4 cursor-grab" />
-            </button>
-            <button
-              class="btn btn-sm flex-1"
-              @click="selectBackend(element.uuid)"
+            <div class="flex items-center gap-2">
+              <button class="btn btn-circle btn-ghost btn-sm">
+                <ChevronUpDownIcon class="h-4 w-4 cursor-grab" />
+              </button>
+              <button
+                class="btn btn-sm flex-1"
+                @click="selectBackend(element.uuid)"
+              >
+                {{ getLabelFromBackend(element) }}
+              </button>
+              <button
+                class="btn btn-circle btn-ghost btn-sm"
+                @click="editBackend(element)"
+              >
+                <PencilIcon class="h-4 w-4" />
+              </button>
+              <button
+                class="btn btn-circle btn-ghost btn-sm"
+                @click="() => removeBackend(element.uuid)"
+              >
+                <TrashIcon class="h-4 w-4" />
+              </button>
+            </div>
+            <!-- Tunnel controls -->
+            <div
+              v-if="isTauriApp && element.tunnel?.enabled"
+              class="ml-10 flex items-center gap-2 text-xs"
             >
-              {{ getLabelFromBackend(element) }}
-            </button>
-            <button
-              class="btn btn-circle btn-ghost btn-sm"
-              @click="editBackend(element)"
-            >
-              <PencilIcon class="h-4 w-4" />
-            </button>
-            <button
-              class="btn btn-circle btn-ghost btn-sm"
-              @click="() => removeBackend(element.uuid)"
-            >
-              <TrashIcon class="h-4 w-4" />
-            </button>
+              <span
+                class="inline-block h-2 w-2 rounded-full"
+                :class="isTunnelRunning(element.uuid) ? 'bg-success' : 'bg-error'"
+              ></span>
+              <span class="opacity-70">
+                {{ element.tunnel.tool }} :{{ element.tunnel.localPort }}
+              </span>
+              <button
+                v-if="!isTunnelRunning(element.uuid)"
+                class="btn btn-xs btn-success btn-outline"
+                :disabled="tunnelLoading.has(element.uuid)"
+                @click="handleStartTunnel(element.uuid)"
+              >
+                {{ tunnelLoading.has(element.uuid) ? '...' : $t('tunnelStart') }}
+              </button>
+              <button
+                v-else
+                class="btn btn-xs btn-error btn-outline"
+                :disabled="tunnelLoading.has(element.uuid)"
+                @click="handleStopTunnel(element.uuid)"
+              >
+                {{ tunnelLoading.has(element.uuid) ? '...' : $t('tunnelStop') }}
+              </button>
+            </div>
           </div>
         </template>
       </Draggable>
@@ -152,8 +183,15 @@ import {
   QuestionMarkCircleIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
-import { reactive, ref, watch } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import Draggable from 'vuedraggable'
+import {
+  isTauri,
+  getTunnelStatuses,
+  startTunnel,
+  stopTunnel,
+  tunnelStatuses,
+} from '@/api/tunnel'
 
 const form = reactive({
   protocol: 'http',
@@ -166,6 +204,51 @@ const form = reactive({
 
 const showEditModal = ref(false)
 const editingBackendUuid = ref<string>('')
+const isTauriApp = isTauri
+const tunnelLoading = reactive(new Set<string>())
+
+const isTunnelRunning = (uuid: string) => {
+  const status = tunnelStatuses.value.get(uuid)
+  return status?.running === true
+}
+
+const handleStartTunnel = async (uuid: string) => {
+  tunnelLoading.add(uuid)
+  try {
+    await startTunnel(uuid)
+    await getTunnelStatuses()
+  } catch (e) {
+    showNotification({ content: `Tunnel start failed: ${e}`, type: 'alert-error' })
+  } finally {
+    tunnelLoading.delete(uuid)
+  }
+}
+
+const handleStopTunnel = async (uuid: string) => {
+  tunnelLoading.add(uuid)
+  try {
+    await stopTunnel(uuid)
+    await getTunnelStatuses()
+  } catch (e) {
+    showNotification({ content: `Tunnel stop failed: ${e}`, type: 'alert-error' })
+  } finally {
+    tunnelLoading.delete(uuid)
+  }
+}
+
+// Poll tunnel statuses
+let statusInterval: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  if (isTauriApp) {
+    getTunnelStatuses()
+    statusInterval = setInterval(() => getTunnelStatuses(), 5000)
+  }
+})
+
+onUnmounted(() => {
+  if (statusInterval) clearInterval(statusInterval)
+})
 
 // 监听路由参数，自动打开编辑模态框
 watch(

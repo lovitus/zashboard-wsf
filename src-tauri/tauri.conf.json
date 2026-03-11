@@ -34,6 +34,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "externalBin": [
+      "binaries/gust",
+      "binaries/slider"
+    ],
     "windows": {
       "webviewInstallMode": {
         "type": "embedBootstrapper"

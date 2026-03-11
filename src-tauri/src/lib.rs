@@ -1,21 +1,21 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, State};
 use tokio::process::{Child, Command};
 
-/// Tunnel configuration for a backend that needs port forwarding
+/// Tunnel configuration for a backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TunnelConfig {
     pub id: String,
     pub backend_uuid: String,
-    /// "gust", "slider", or "flyssh"
+    /// "gust" or "slider"
     pub tool: String,
-    /// Full command-line arguments (e.g., ["-L", "127.0.0.1:19090:127.0.0.1:9090", "user@host"])
     pub args: Vec<String>,
-    /// Local port that will be forwarded to
     pub local_port: u16,
-    /// Whether to auto-start when app launches
     pub auto_start: bool,
 }
 
@@ -30,20 +30,14 @@ pub struct TunnelStatus {
 struct TunnelState {
     processes: HashMap<String, Child>,
     configs: Vec<TunnelConfig>,
+    sidecar_dir: PathBuf,
 }
 
-impl Default for TunnelState {
-    fn default() -> Self {
-        Self {
-            processes: HashMap::new(),
-            configs: Vec::new(),
-        }
-    }
-}
+// --- Persistence ---
 
-fn get_config_path() -> std::path::PathBuf {
+fn get_config_path() -> PathBuf {
     let dir = dirs::config_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .unwrap_or_else(|| PathBuf::from("."))
         .join("zashboard");
     std::fs::create_dir_all(&dir).ok();
     dir.join("tunnels.json")
@@ -66,6 +60,88 @@ fn save_configs(configs: &[TunnelConfig]) {
     }
 }
 
+// --- Sidecar resolution ---
+
+fn resolve_sidecar_dir() -> PathBuf {
+    // In release: sidecars are next to the main executable
+    // In dev: they're in src-tauri/binaries/ with target triple suffix
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            return dir.to_path_buf();
+        }
+    }
+    PathBuf::from(".")
+}
+
+fn resolve_tool_path(sidecar_dir: &PathBuf, tool: &str) -> PathBuf {
+    // Try exact name first (release mode: gust.exe / slider.exe next to binary)
+    let base = sidecar_dir.join(tool);
+    #[cfg(windows)]
+    {
+        let with_ext = base.with_extension("exe");
+        if with_ext.exists() {
+            return with_ext;
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if base.exists() {
+            return base;
+        }
+    }
+
+    // Try with target triple suffix (dev mode)
+    let target = if cfg!(target_os = "windows") && cfg!(target_arch = "x86_64") {
+        "x86_64-pc-windows-msvc"
+    } else if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
+        "aarch64-apple-darwin"
+    } else if cfg!(target_os = "macos") && cfg!(target_arch = "x86_64") {
+        "x86_64-apple-darwin"
+    } else if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
+        "x86_64-unknown-linux-gnu"
+    } else if cfg!(target_os = "linux") && cfg!(target_arch = "aarch64") {
+        "aarch64-unknown-linux-gnu"
+    } else {
+        ""
+    };
+
+    if !target.is_empty() {
+        let name = format!("{}-{}", tool, target);
+        let suffixed = sidecar_dir.join(&name);
+        #[cfg(windows)]
+        {
+            let with_ext = suffixed.with_extension("exe");
+            if with_ext.exists() {
+                return with_ext;
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            if suffixed.exists() {
+                return suffixed;
+            }
+        }
+    }
+
+    // Fallback: just return the base name, will fail with clear error
+    base
+}
+
+fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Child, String> {
+    let tool_path = resolve_tool_path(sidecar_dir, tool);
+    eprintln!("Starting tunnel: {} {:?}", tool_path.display(), args);
+
+    Command::new(&tool_path)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to start {}: {}", tool_path.display(), e))
+}
+
+// --- Tauri Commands ---
+
 #[tauri::command]
 async fn get_tunnels(state: State<'_, Mutex<TunnelState>>) -> Result<Vec<TunnelConfig>, String> {
     let s = state.lock().map_err(|e| e.to_string())?;
@@ -78,7 +154,6 @@ async fn get_tunnel_statuses(
 ) -> Result<Vec<TunnelStatus>, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
 
-    // Collect config IDs first to avoid borrow conflicts
     let ids: Vec<String> = s.configs.iter().map(|c| c.id.clone()).collect();
     let mut statuses = Vec::new();
     let mut dead_ids = Vec::new();
@@ -109,7 +184,6 @@ async fn get_tunnel_statuses(
         });
     }
 
-    // Clean up dead processes
     for id in dead_ids {
         s.processes.remove(&id);
     }
@@ -145,7 +219,6 @@ async fn remove_tunnel(
         save_configs(&s.configs);
     }
 
-    // Kill process outside lock scope
     if let Some(mut child) = child_to_kill {
         child.kill().await.ok();
     }
@@ -158,24 +231,17 @@ async fn start_tunnel(
     id: String,
     state: State<'_, Mutex<TunnelState>>,
 ) -> Result<TunnelStatus, String> {
-    let (tool, args) = {
+    let (sidecar_dir, tool, args) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         let config = s
             .configs
             .iter()
             .find(|c| c.id == id)
             .ok_or_else(|| format!("Tunnel {} not found", id))?;
-        (config.tool.clone(), config.args.clone())
+        (s.sidecar_dir.clone(), config.tool.clone(), config.args.clone())
     };
 
-    let child = Command::new(&tool)
-        .args(&args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("Failed to start {}: {}", tool, e))?;
-
+    let child = spawn_tunnel(&sidecar_dir, &tool, &args)?;
     let pid = child.id();
 
     {
@@ -201,7 +267,6 @@ async fn stop_tunnel(
         s.processes.remove(&id)
     };
 
-    // Kill process outside lock scope
     if let Some(mut child) = child_to_kill {
         child.kill().await.ok();
     }
@@ -214,15 +279,32 @@ async fn stop_tunnel(
     })
 }
 
+// --- App entry ---
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut tunnel_state = TunnelState::default();
-    tunnel_state.configs = load_configs();
+    let sidecar_dir = resolve_sidecar_dir();
+
+    // Pre-check sidecar binaries exist
+    for tool in &["gust", "slider"] {
+        let path = resolve_tool_path(&sidecar_dir, tool);
+        if path.exists() {
+            eprintln!("Sidecar found: {} -> {}", tool, path.display());
+        } else {
+            eprintln!("WARNING: Sidecar not found: {} (looked at {})", tool, path.display());
+        }
+    }
+
+    let ts = TunnelState {
+        processes: HashMap::new(),
+        configs: load_configs(),
+        sidecar_dir: sidecar_dir.clone(),
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
-        .manage(Mutex::new(tunnel_state))
+        .manage(Mutex::new(ts))
         .invoke_handler(tauri::generate_handler![
             get_tunnels,
             get_tunnel_statuses,
@@ -231,42 +313,77 @@ pub fn run() {
             start_tunnel,
             stop_tunnel,
         ])
-        .setup(|app| {
-            // Auto-start tunnels marked for auto-start
+        .setup(move |app| {
+            // --- System Tray ---
+            let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let tray_menu = MenuBuilder::new(app)
+                .item(&show_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("Zashboard")
+                .menu(&tray_menu)
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(win) = app.get_webview_window("main") {
+                                win.show().ok();
+                                win.set_focus().ok();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
+                        if let Some(win) = tray.app_handle().get_webview_window("main") {
+                            win.show().ok();
+                            win.set_focus().ok();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Hide to tray on window close instead of quitting
+            if let Some(win) = app.get_webview_window("main") {
+                let win_clone = win.clone();
+                win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        win_clone.hide().ok();
+                    }
+                });
+            }
+
+            // --- Auto-start tunnels ---
             let state = app.state::<Mutex<TunnelState>>();
-            let auto_start_ids: Vec<String> = {
+            let auto_start_configs: Vec<(String, String, Vec<String>)> = {
                 let s = state.lock().unwrap();
                 s.configs
                     .iter()
                     .filter(|c| c.auto_start)
-                    .map(|c| c.id.clone())
+                    .map(|c| (c.id.clone(), c.tool.clone(), c.args.clone()))
                     .collect()
             };
 
+            let sidecar_dir_clone = sidecar_dir.clone();
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                // Small delay to let the app window load
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                for id in auto_start_ids {
-                    let state = handle.state::<Mutex<TunnelState>>();
-                    let (tool, args) = {
-                        let s = state.lock().unwrap();
-                        match s.configs.iter().find(|c| c.id == id) {
-                            Some(c) => (c.tool.clone(), c.args.clone()),
-                            None => continue,
-                        }
-                    };
-
-                    match Command::new(&tool)
-                        .args(&args)
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .kill_on_drop(true)
-                        .spawn()
-                    {
+                for (id, tool, args) in auto_start_configs {
+                    match spawn_tunnel(&sidecar_dir_clone, &tool, &args) {
                         Ok(child) => {
+                            let state = handle.state::<Mutex<TunnelState>>();
                             let mut s = state.lock().unwrap();
-                            s.processes.insert(id, child);
+                            s.processes.insert(id.clone(), child);
+                            eprintln!("Auto-started tunnel: {}", id);
                         }
                         Err(e) => {
                             eprintln!("Auto-start tunnel {} failed: {}", id, e);

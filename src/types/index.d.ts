@@ -12,7 +12,7 @@ export type Backend = {
 
 export type TunnelConfig = {
   enabled: boolean
-  tool: 'gust' | 'slider' | 'flyssh'
+  tool: 'gust' | 'slider'
   args: string
   localPort: number
   autoStart: boolean

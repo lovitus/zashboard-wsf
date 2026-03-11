@@ -6,6 +6,12 @@ on:
       - 'v*'
   workflow_dispatch:
 
+env:
+  GUST_VERSION: '3.2.6'
+  GUST_TAG: 'v3.2.6-relay'
+  SLIDER_VERSION: '0.1.0'
+  SLIDER_TAG: 'v0.1.0-test'
+
 jobs:
   build-tauri:
     permissions:
@@ -17,15 +23,31 @@ jobs:
           - platform: windows-latest
             args: '--bundles nsis'
             target: ''
+            sidecar_triple: x86_64-pc-windows-msvc
+            gust_asset_suffix: windows-amd64
+            slider_asset_suffix: windows-amd64
+            archive: zip
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
-            target: 'aarch64-apple-darwin'
+            target: aarch64-apple-darwin
+            sidecar_triple: aarch64-apple-darwin
+            gust_asset_suffix: darwin-arm64
+            slider_asset_suffix: darwin-arm64
+            archive: gz
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
-            target: 'x86_64-apple-darwin'
+            target: x86_64-apple-darwin
+            sidecar_triple: x86_64-apple-darwin
+            gust_asset_suffix: darwin-amd64
+            slider_asset_suffix: darwin-amd64
+            archive: gz
           - platform: ubuntu-22.04
             args: ''
             target: ''
+            sidecar_triple: x86_64-unknown-linux-gnu
+            gust_asset_suffix: linux-amd64
+            slider_asset_suffix: linux-amd64
+            archive: gz
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -36,6 +58,43 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Download sidecar binaries
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          TRIPLE="${{ matrix.sidecar_triple }}"
+
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            # Windows: .zip archives
+            gh release download "$GUST_TAG" --repo lovitus/gust \
+              -p "gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}.zip" -D /tmp
+            unzip -o "/tmp/gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}.zip" -d /tmp/gust
+            cp /tmp/gust/gost*.exe "src-tauri/binaries/gust-${TRIPLE}.exe"
+
+            gh release download "$SLIDER_TAG" --repo lovitus/slider \
+              -p "slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}.zip" -D /tmp
+            unzip -o "/tmp/slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}.zip" -d /tmp/slider
+            cp /tmp/slider/slider*.exe "src-tauri/binaries/slider-${TRIPLE}.exe"
+          else
+            # Unix: .gz archives
+            gh release download "$GUST_TAG" --repo lovitus/gust \
+              -p "gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}.gz" -D /tmp
+            gunzip -f "/tmp/gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}.gz"
+            mv "/tmp/gost-${{ matrix.gust_asset_suffix }}-${GUST_VERSION}" "src-tauri/binaries/gust-${TRIPLE}"
+            chmod +x "src-tauri/binaries/gust-${TRIPLE}"
+
+            gh release download "$SLIDER_TAG" --repo lovitus/slider \
+              -p "slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}.gz" -D /tmp
+            gunzip -f "/tmp/slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}.gz"
+            mv "/tmp/slider-${{ matrix.slider_asset_suffix }}-${SLIDER_VERSION}" "src-tauri/binaries/slider-${TRIPLE}"
+            chmod +x "src-tauri/binaries/slider-${TRIPLE}"
+          fi
+
+          echo "=== Sidecar binaries ==="
+          ls -la src-tauri/binaries/
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
