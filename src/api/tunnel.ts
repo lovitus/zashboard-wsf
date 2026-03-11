@@ -2,6 +2,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { ref } from 'vue'
 
 export const isTauri = typeof __IS_TAURI__ !== 'undefined' && __IS_TAURI__
+const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+export const isDesktopTauri = isTauri && !isMobileDevice
 
 export interface RustTunnelConfig {
   id: string

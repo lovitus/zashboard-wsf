@@ -6,11 +6,11 @@ use std::sync::{Arc, Mutex};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
+#[cfg(desktop)]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 
 /// Tunnel configuration for a backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -383,6 +383,24 @@ async fn add_defender_exclusion(state: State<'_, Mutex<TunnelState>>) -> Result<
     Ok(dir_str)
 }
 
+#[cfg(desktop)]
+fn show_or_create_window(handle: &tauri::AppHandle) {
+    if let Some(win) = handle.get_webview_window("main") {
+        win.show().ok();
+        win.set_focus().ok();
+    } else {
+        let _ = WebviewWindowBuilder::new(
+            handle,
+            "main",
+            WebviewUrl::App("index.html".into()),
+        )
+        .title("Zashboard - Mihomo Dashboard")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(400.0, 600.0)
+        .build();
+    }
+}
+
 // --- App entry ---
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -437,10 +455,7 @@ pub fn run() {
                     .on_menu_event(|app, event| {
                         match event.id().as_ref() {
                             "show" => {
-                                if let Some(win) = app.get_webview_window("main") {
-                                    win.show().ok();
-                                    win.set_focus().ok();
-                                }
+                                show_or_create_window(app);
                             }
                             "quit" => {
                                 app.exit(0);
@@ -450,24 +465,10 @@ pub fn run() {
                     })
                     .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
                         if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
-                            if let Some(win) = tray.app_handle().get_webview_window("main") {
-                                win.show().ok();
-                                win.set_focus().ok();
-                            }
+                            show_or_create_window(tray.app_handle());
                         }
                     })
                     .build(app)?;
-
-                // Hide to tray on window close instead of quitting
-                if let Some(win) = app.get_webview_window("main") {
-                    let win_clone = win.clone();
-                    win.on_window_event(move |event| {
-                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                            api.prevent_close();
-                            win_clone.hide().ok();
-                        }
-                    });
-                }
             }
 
             // --- Auto-start tunnels ---
@@ -502,6 +503,12 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            #[cfg(desktop)]
+            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+                api.prevent_exit();
+            }
+        });
 }

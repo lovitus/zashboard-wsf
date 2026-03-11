@@ -166,7 +166,7 @@ import {
 } from '@heroicons/vue/24/outline'
 import { reactive, ref, watch } from 'vue'
 import Draggable from 'vuedraggable'
-import { isTauri } from '@/api/tunnel'
+import { isDesktopTauri } from '@/api/tunnel'
 
 const form = reactive({
   protocol: 'http',
@@ -179,7 +179,7 @@ const form = reactive({
 
 const showEditModal = ref(false)
 const editingBackendUuid = ref<string>('')
-const isTauriApp = isTauri
+const isTauriApp = isDesktopTauri
 
 // 监听路由参数，自动打开编辑模态框
 watch(
