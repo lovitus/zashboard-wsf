@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
+#[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
+#[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, State};
 use tokio::process::{Child, Command};
@@ -314,52 +316,55 @@ pub fn run() {
             stop_tunnel,
         ])
         .setup(move |app| {
-            // --- System Tray ---
-            let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-            let tray_menu = MenuBuilder::new(app)
-                .item(&show_item)
-                .separator()
-                .item(&quit_item)
-                .build()?;
+            // --- System Tray (desktop only) ---
+            #[cfg(desktop)]
+            {
+                let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
+                let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+                let tray_menu = MenuBuilder::new(app)
+                    .item(&show_item)
+                    .separator()
+                    .item(&quit_item)
+                    .build()?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Zashboard")
-                .menu(&tray_menu)
-                .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        "show" => {
-                            if let Some(win) = app.get_webview_window("main") {
+                let _tray = TrayIconBuilder::new()
+                    .icon(app.default_window_icon().unwrap().clone())
+                    .tooltip("Zashboard")
+                    .menu(&tray_menu)
+                    .on_menu_event(|app, event| {
+                        match event.id().as_ref() {
+                            "show" => {
+                                if let Some(win) = app.get_webview_window("main") {
+                                    win.show().ok();
+                                    win.set_focus().ok();
+                                }
+                            }
+                            "quit" => {
+                                app.exit(0);
+                            }
+                            _ => {}
+                        }
+                    })
+                    .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
+                        if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
+                            if let Some(win) = tray.app_handle().get_webview_window("main") {
                                 win.show().ok();
                                 win.set_focus().ok();
                             }
                         }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
-                        if let Some(win) = tray.app_handle().get_webview_window("main") {
-                            win.show().ok();
-                            win.set_focus().ok();
-                        }
-                    }
-                })
-                .build(app)?;
+                    })
+                    .build(app)?;
 
-            // Hide to tray on window close instead of quitting
-            if let Some(win) = app.get_webview_window("main") {
-                let win_clone = win.clone();
-                win.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        win_clone.hide().ok();
-                    }
-                });
+                // Hide to tray on window close instead of quitting
+                if let Some(win) = app.get_webview_window("main") {
+                    let win_clone = win.clone();
+                    win.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            win_clone.hide().ok();
+                        }
+                    });
+                }
             }
 
             // --- Auto-start tunnels ---
