@@ -161,6 +161,15 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
+      - name: Create placeholder sidecar binaries for Android
+        run: |
+          mkdir -p src-tauri/binaries
+          for target in aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android; do
+            touch "src-tauri/binaries/gust-${target}"
+            touch "src-tauri/binaries/slider-${target}"
+          done
+          ls -la src-tauri/binaries/
+
       - name: Install frontend dependencies
         run: pnpm install
 
