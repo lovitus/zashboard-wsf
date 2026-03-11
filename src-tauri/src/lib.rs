@@ -77,13 +77,17 @@ async fn get_tunnel_statuses(
     state: State<'_, Mutex<TunnelState>>,
 ) -> Result<Vec<TunnelStatus>, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
-    let mut statuses = Vec::new();
 
-    for config in &s.configs {
-        let running = if let Some(child) = s.processes.get_mut(&config.id) {
+    // Collect config IDs first to avoid borrow conflicts
+    let ids: Vec<String> = s.configs.iter().map(|c| c.id.clone()).collect();
+    let mut statuses = Vec::new();
+    let mut dead_ids = Vec::new();
+
+    for id in &ids {
+        let running = if let Some(child) = s.processes.get_mut(id) {
             match child.try_wait() {
-                Ok(Some(_)) => false, // exited
-                Ok(None) => true,     // still running
+                Ok(Some(_)) => false,
+                Ok(None) => true,
                 Err(_) => false,
             }
         } else {
@@ -91,19 +95,23 @@ async fn get_tunnel_statuses(
         };
 
         let pid = if running {
-            s.processes.get(&config.id).and_then(|c| c.id())
+            s.processes.get(id).and_then(|c| c.id())
         } else {
-            // Clean up dead process
-            s.processes.remove(&config.id);
+            dead_ids.push(id.clone());
             None
         };
 
         statuses.push(TunnelStatus {
-            id: config.id.clone(),
+            id: id.clone(),
             running,
             pid,
             error: None,
         });
+    }
+
+    // Clean up dead processes
+    for id in dead_ids {
+        s.processes.remove(&id);
     }
 
     Ok(statuses)
@@ -129,15 +137,19 @@ async fn remove_tunnel(
     id: String,
     state: State<'_, Mutex<TunnelState>>,
 ) -> Result<(), String> {
-    let mut s = state.lock().map_err(|e| e.to_string())?;
+    let child_to_kill;
+    {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        child_to_kill = s.processes.remove(&id);
+        s.configs.retain(|c| c.id != id);
+        save_configs(&s.configs);
+    }
 
-    // Kill process if running
-    if let Some(mut child) = s.processes.remove(&id) {
+    // Kill process outside lock scope
+    if let Some(mut child) = child_to_kill {
         child.kill().await.ok();
     }
 
-    s.configs.retain(|c| c.id != id);
-    save_configs(&s.configs);
     Ok(())
 }
 
@@ -184,10 +196,16 @@ async fn stop_tunnel(
     id: String,
     state: State<'_, Mutex<TunnelState>>,
 ) -> Result<TunnelStatus, String> {
-    let mut s = state.lock().map_err(|e| e.to_string())?;
-    if let Some(mut child) = s.processes.remove(&id) {
+    let child_to_kill = {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        s.processes.remove(&id)
+    };
+
+    // Kill process outside lock scope
+    if let Some(mut child) = child_to_kill {
         child.kill().await.ok();
     }
+
     Ok(TunnelStatus {
         id,
         running: false,

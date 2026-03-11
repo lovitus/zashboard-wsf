@@ -1,97 +1,108 @@
-# zashboard
+# Zashboard Native (zashboard-wsf)
 
-<p align="center">
-  <img src="./readme/pc.png" height="300">
-  <img src="./readme/mobile.png" height="300">
-</p>
+Native cross-platform Mihomo dashboard application built with [Tauri v2](https://v2.tauri.app/), wrapping the [zashboard](https://github.com/Zephyruso/zashboard) web UI.
 
-## **Requirement**
+## Features
 
-Browser support
+- **Full zashboard UI** — all upstream features: proxies, rules, connections, logs, overview
+- **Multi-backend management** — configure and switch between multiple Mihomo instances
+- **Port forwarding tunnels** — built-in support for [slider](https://github.com/lovitus/slider), [gust](https://github.com/lovitus/gust), and [flyssh](https://github.com/lovitus/flyssh) to reach Mihomo instances behind SSH (listening on `127.0.0.1`)
+- **Auto-start tunnels** — tunnels can be configured to start automatically on launch
+- **Cross-platform** — Windows, macOS, Linux (Android via CI)
+- **Lightweight** — native WebView, ~12 MB installer
 
-- Chrome 111 (released March 2023)
-- Firefox 128 (released July 2024)
-- Safari 16.4 (released March 2023)
-- Not supported on iOS 16.4 jailbroken version.
+## Download
 
-## **Online**
+Download the latest release from the [Releases](https://github.com/lovitus/zashboard-wsf/releases) page:
 
-You can access the online zashboard at the following link:
+- **Windows**: `zashboard_x.x.x_x64-setup.exe` (NSIS installer)
+- **macOS**: `zashboard_x.x.x_aarch64.dmg` / `zashboard_x.x.x_x64.dmg`
+- **Linux**: `zashboard_x.x.x_amd64.deb` / `zashboard_x.x.x_amd64.AppImage`
+- **Android**: `zashboard_x.x.x.apk`
 
-- [Online zashboard](http://board.zash.run.place)
+## Tunnel Forwarding
 
-## **Download**
+When adding a Mihomo backend, enable **Port Forwarding Tunnel** to connect to instances behind SSH:
 
-You can download the zashboard files here:
+| Tool | Example Args |
+|------|-------------|
+| **slider** | `-listen ltcp://:19090/127.0.0.1:9090 -forward ssh://user@host:22` |
+| **gust** | `-L tcp://:19090/127.0.0.1:9090 -F relay+ssh://user@host:22` |
+| **flyssh** | `-L 19090:127.0.0.1:9090 user@host` |
 
-release:
+The tunnel tool binary (`slider`, `gust`, or `flyssh`) must be in your system PATH.
 
-- [dist.zip (7.81 MB)](https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip) – Includes better font-loading experience.
-- [dist-no-fonts.zip (1.44 MB)](https://github.com/Zephyruso/zashboard/releases/latest/download/dist-no-fonts.zip) – No fonts included, uses system fonts only.
-- [dist-cdn-fonts.zip (1.44 MB)](https://github.com/Zephyruso/zashboard/releases/latest/download/dist-cdn-fonts.zip) – Fonts loaded from unpkg.com, If you have trouble connecting to unpkg.com, **you may experience slow page loading**.
-- [dist-firasans-only.zip (1.67 MB)](https://github.com/Zephyruso/zashboard/releases/latest/download/dist-firasans-only.zip) – Only with FiraSans Font
-- [dist-misans-only.zip (3.54 MB)](https://github.com/Zephyruso/zashboard/releases/latest/download/dist-misans-only.zip) – Only with MiSans Font
-- [dist-pingfang-only.zip (3.25 MB)](https://github.com/Zephyruso/zashboard/releases/latest/download/dist-pingfang-only.zip) – Only with PingFang Font
-- [dist-sarasa-only.zip (3.67 MB)](https://github.com/Zephyruso/zashboard/releases/latest/download/dist-sarasa-only.zip) – Only with Sarasa Font
+## Development
 
-dev:
+### Prerequisites
 
-- [gh-pages.zip (7.81 MB)](https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip)
-- [gh-pages-no-fonts.zip (1.44 MB)](https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages-no-fonts.zip)
-- [gh-pages-cdn-fonts.zip (1.44 MB)](https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages-cdn-fonts.zip)
-- [gh-pages-firasans-only.zip (1.67 MB)](https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages-firasans-only.zip)
-- [gh-pages-misans-only.zip (3.54 MB)](https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages-misans-only.zip)
-- [gh-pages-pingfang-only.zip (3.25 MB)](https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages-pingfang-only.zip)
-- [gh-pages-sarasa-only.zip (3.67 MB)](https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages-sarasa-only.zip)
+- [Node.js](https://nodejs.org/) >= 22
+- [pnpm](https://pnpm.io/) >= 10
+- [Rust](https://rustup.rs/) >= 1.85
 
-## **Docker Setup**
+### Setup
 
-To run zashboard via Docker, use the following command:
-
-```
-docker run -d -p 80:80 ghcr.io/zephyruso/zashboard:latest
+```bash
+git clone https://github.com/lovitus/zashboard-wsf.git
+cd zashboard-wsf
+pnpm install
 ```
 
-## Tips
+### Dev mode
 
-1. The connection table can be dragged with the left mouse button, and right-clicking can copy cell content.
-2. Right-clicking on a node / node group card will perform a speedtest for the node / node group.
-3. The proxy group sorting is based on the node order in the GLOBAL group. In Mihomo, it follows the configuration file order, while in sing-box, route.final is placed first, with the rest following the configuration file order. If you need custom ordering, you can specify the order by overriding the GLOBAL group.
-4. The dashboard supports PWA (Progressive Web App), which can provide a native app-like experience on mobile devices through "Add to Home Screen".
-5. The dashboard's upgrade button and auto-upgrade functionality require proper configuration of the core's UI download path ([mihomo](https://wiki.metacubex.one/config/general/#_9) | [sing-box](https://sing-box.sagernet.org/configuration/experimental/clash-api/#external_ui_download_url)), otherwise clicking update may result in updating to the core's default panel.
+```bash
+pnpm tauri dev
+```
 
-## 提示
+### Production build
 
-1. 连接表格可被鼠标左键拖动，右键可复制单元格内容。
-2. 右键点击节点/节点组卡片可对节点/节点组进行测速。
-3. 面板的节点组排序是根据GLOBAL组中的节点顺序排序的，在Mihomo中会是按配置文件的顺序，在sing-box中会把route.final放到第一位，其余按照配置文件顺序，如果你需要自定义顺序，可通过覆盖GLOBAL组指定顺序
-4. 面板支持PWA（Progressive Web App），可以在移动设备上通过"添加到主屏幕"获得类原生app的体验
-5. 面板的更新按钮和自动更新功能需要正确的配置核心的ui下载路径 ([mihomo](https://wiki.metacubex.one/config/general/#_9) | [sing-box](https://sing-box.sagernet.org/configuration/experimental/clash-api/#external_ui_download_url)), 否则可能会在点击更新后更新为核心默认面板
+```bash
+pnpm tauri build
+# or specific bundle:
+pnpm tauri build -- --bundles nsis   # Windows NSIS
+pnpm tauri build -- --bundles dmg    # macOS DMG
+pnpm tauri build -- --bundles deb    # Linux DEB
+```
 
-## URL params format
+## Syncing with upstream zashboard
 
-#### basic example
+This project is based on [Zephyruso/zashboard](https://github.com/Zephyruso/zashboard) v2.7.0. To sync with upstream:
 
-http://host:port/#/setup?hostname=ipordomain&port=9090&secret=123456
+```bash
+# Add upstream remote (one time)
+git remote add upstream https://github.com/Zephyruso/zashboard.git
 
-1. **`http` / `https`**
-   - Determines the protocol (`http` or `https`).
-   - Default: current page protocol
+# Fetch and merge
+git fetch upstream
+git merge upstream/main
+# Resolve conflicts in modified files:
+#   - src/types/index.d.ts (TunnelConfig type)
+#   - src/components/settings/EditBackendModal.vue (tunnel UI)
+#   - src/i18n/*.ts (tunnel translations)
+#   - vite.config.ts (Tauri integration)
+#   - package.json (Tauri dependencies)
+```
 
-2. **`hostname`**
-   - The Clash API's IP or domain.
+Only a few files are modified from upstream — merge conflicts should be minimal.
 
-3. **`port`**
-   - The Clash API port.
+## Project Structure
 
-4. **`secondaryPath`**
-   - Optional path appended to the base URL.
-   - Default: An empty string.
+```
+zashboard-wsf/
+├── src/                    # Vue.js frontend (from upstream zashboard)
+│   ├── api/tunnel.ts       # Tunnel IPC API (new)
+│   ├── types/index.d.ts    # Extended Backend type with TunnelConfig
+│   └── components/settings/
+│       └── EditBackendModal.vue  # Tunnel config UI (extended)
+├── src-tauri/              # Rust backend (Tauri v2)
+│   ├── src/lib.rs          # Tunnel process management, IPC commands
+│   ├── tauri.conf.json     # Tauri configuration
+│   └── capabilities/       # Permission scopes
+├── .github/workflows/      # CI/CD
+│   └── release.yml         # Cross-platform build + release
+└── vite.config.ts          # Vite config with Tauri integration
+```
 
-5. **`secret`**
-   - Password for authentication.
+## License
 
-6. **`disableUpgradeCore`**
-   - Set '1' or 'true' to hide upgrade core button
-
-### I code just for fun, not for money. If you really want to donate, please consider donating to [UNICEF](https://www.unicef.org/) to help hungry children.
+MIT — based on [zashboard](https://github.com/Zephyruso/zashboard) by Zephyruso
