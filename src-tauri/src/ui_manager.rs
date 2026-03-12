@@ -874,9 +874,16 @@ fn handle_proxy_request(
 
     let method = reqwest::Method::from_bytes(req.method.as_bytes())
         .map_err(|e| format!("Invalid method: {}", e))?;
+
+    eprintln!("WSF proxy: {} {}", req.method, target_url);
+
     let client = reqwest::blocking::Client::builder()
+        .no_proxy()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(60))
+        // Upstream dashboard users often configure HTTPS backends with self-signed certs.
+        // Browser path may work with user trust settings while reqwest does not.
+        .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| format!("Proxy HTTP client error: {}", e))?;
 
@@ -897,7 +904,7 @@ fn handle_proxy_request(
 
     let response = request_builder
         .send()
-        .map_err(|e| format!("Proxy request failed: {}", e))?;
+        .map_err(|e| format!("Proxy request failed ({}): {}", target_url, e))?;
 
     let status = response.status().as_u16();
     let content_type = response

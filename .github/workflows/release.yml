@@ -21,10 +21,16 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            args: '--bundles nsis'
-            target: ''
+            args: '--target x86_64-pc-windows-msvc --bundles nsis'
+            target: x86_64-pc-windows-msvc
             gust_asset_suffix: windows-amd64
             slider_asset_suffix: windows-amd64
+            archive: zip
+          - platform: windows-latest
+            args: '--target i686-pc-windows-msvc --bundles nsis'
+            target: i686-pc-windows-msvc
+            gust_asset_suffix: windows-386
+            slider_asset_suffix: windows-386
             archive: zip
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
@@ -32,18 +38,20 @@ jobs:
             gust_asset_suffix: darwin-arm64
             slider_asset_suffix: darwin-arm64
             archive: gz
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-            target: x86_64-apple-darwin
-            gust_asset_suffix: darwin-amd64
-            slider_asset_suffix: darwin-amd64
-            archive: gz
-          - platform: ubuntu-22.04
-            args: ''
-            target: ''
-            gust_asset_suffix: linux-amd64
-            slider_asset_suffix: linux-amd64
-            archive: gz
+          # Temporarily disabled: macOS Intel
+          # - platform: macos-latest
+          #   args: '--target x86_64-apple-darwin'
+          #   target: x86_64-apple-darwin
+          #   gust_asset_suffix: darwin-amd64
+          #   slider_asset_suffix: darwin-amd64
+          #   archive: gz
+          # Temporarily disabled: Linux
+          # - platform: ubuntu-22.04
+          #   args: ''
+          #   target: ''
+          #   gust_asset_suffix: linux-amd64
+          #   slider_asset_suffix: linux-amd64
+          #   archive: gz
 
     runs-on: ${{ matrix.platform }}
     steps:
