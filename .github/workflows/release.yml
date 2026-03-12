@@ -295,49 +295,16 @@ jobs:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
       - name: Sign APK
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_ARCHIVE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_ARCHIVE_PASSWORD }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           set -euo pipefail
-          mkdir -p /tmp/ks
+          KS_FILE="src-tauri/open-release.keystore"
+          KEY_ALIAS="zashboard"
+          KEY_PASS="zashboard-open-2026"
 
-          # Priority:
-          # 1) ANDROID_KEYSTORE_BASE64 (recommended, no zip password dependency)
-          # 2) encrypted zip + ANDROID_KEYSTORE_ARCHIVE_PASSWORD
-          # 3) encrypted zip + ANDROID_KEYSTORE_PASSWORD (compat fallback)
-          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            echo "Using ANDROID_KEYSTORE_BASE64 for signing keystore."
-            if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > /tmp/ks/release.keystore 2>/tmp/ks_decode.log; then
-              echo "ERROR: ANDROID_KEYSTORE_BASE64 is invalid base64 content."
-              sed -n '1,120p' /tmp/ks_decode.log || true
-              exit 2
-            fi
-            KS_FILE="/tmp/ks/release.keystore"
-          else
-            rm -rf /tmp/ks/*
-            if ! 7z x -y -p"${ANDROID_KEYSTORE_ARCHIVE_PASSWORD:-}" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/ >/tmp/ks_unzip.log 2>&1; then
-              echo "Archive password failed, retrying with ANDROID_KEYSTORE_PASSWORD ..."
-              rm -rf /tmp/ks/*
-              if ! 7z x -y -p"${ANDROID_KEYSTORE_PASSWORD:-}" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/ >/tmp/ks_unzip.log 2>&1; then
-                echo "ERROR: Failed to decrypt src-tauri/android_keystore_encrypted.zip"
-                echo "Fix one of the following:"
-                echo "1) Set ANDROID_KEYSTORE_BASE64 (recommended), or"
-                echo "2) Set correct ANDROID_KEYSTORE_ARCHIVE_PASSWORD."
-                sed -n '1,120p' /tmp/ks_unzip.log || true
-                exit 2
-              fi
-            fi
-            KS_FILE="$(find /tmp/ks -name "*.keystore" | head -1)"
-            if [ -z "$KS_FILE" ]; then
-              echo "ERROR: keystore file not found after archive extraction."
-              exit 2
-            fi
+          if [ ! -f "$KS_FILE" ]; then
+            echo "ERROR: missing keystore file: $KS_FILE"
+            exit 2
           fi
-
-          KEY_ALIAS="${ANDROID_KEY_ALIAS:-zashboard}"
 
           # Install build-tools for apksigner & zipalign
           sdkmanager "build-tools;34.0.0"
@@ -354,9 +321,9 @@ jobs:
           # Sign with apksigner
           "$BT/apksigner" sign \
             --ks "$KS_FILE" \
-            --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
+            --ks-pass pass:"$KEY_PASS" \
             --ks-key-alias "$KEY_ALIAS" \
-            --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass pass:"$KEY_PASS" \
             "$UNSIGNED"
 
           # Verify
@@ -366,9 +333,6 @@ jobs:
           SIGNED="${APK_DIR}/zashboard-universal-release.apk"
           mv "$UNSIGNED" "$SIGNED"
           echo "Signed APK: $SIGNED"
-
-          # Clean up keystore
-          rm -rf /tmp/ks
 
       - name: Upload APK
         uses: softprops/action-gh-release@v2

@@ -30,20 +30,12 @@ This file tracks practical checks to run before each tagged release.
 
 - Review whether upstream storage snapshot should be encrypted at rest
 
-## Android Release Secrets
+## Android Signing (Open Key)
 
-The Android signing step in `release.yml` expects these repository secrets:
+The Android signing step now uses an open keystore file in repo:
 
-- `ANDROID_KEYSTORE_BASE64` (recommended)
-- `ANDROID_KEYSTORE_ARCHIVE_PASSWORD`
-- `ANDROID_KEYSTORE_PASSWORD`
-- `ANDROID_KEY_ALIAS` (optional, defaults to `zashboard`)
+- Keystore path: `src-tauri/open-release.keystore`
+- Alias: `zashboard`
+- Store/key password: `zashboard-open-2026`
 
-Notes:
-- If `ANDROID_KEYSTORE_BASE64` is provided, CI decodes it directly and does not depend on zip passwords.
-- If `ANDROID_KEYSTORE_BASE64` is empty, CI falls back to decrypting `android_keystore_encrypted.zip`:
-  - first with `ANDROID_KEYSTORE_ARCHIVE_PASSWORD`
-  - then with `ANDROID_KEYSTORE_PASSWORD`
-
-Example (PowerShell) to generate `ANDROID_KEYSTORE_BASE64`:
-- `[Convert]::ToBase64String([IO.File]::ReadAllBytes("zashboard-release.keystore"))`
+No repository secret is required for Android signing in CI.
