@@ -1,36 +1,45 @@
-# Zashboard Native (zashboard-wsf)
+﻿# Zashboard Native (zashboard-wsf)
 
-Native cross-platform Mihomo dashboard application built with [Tauri v2](https://v2.tauri.app/), wrapping the [zashboard](https://github.com/Zephyruso/zashboard) web UI.
+Native Mihomo dashboard app built with [Tauri v2](https://v2.tauri.app/), based on [Zephyruso/zashboard](https://github.com/Zephyruso/zashboard).
 
-## Features
+## What This Project Adds
 
-- **Full zashboard UI** — all upstream features: proxies, rules, connections, logs, overview
-- **Multi-backend management** — configure and switch between multiple Mihomo instances
-- **Port forwarding tunnels** — built-in support for [slider](https://github.com/lovitus/slider), [gust](https://github.com/lovitus/gust), and [flyssh](https://github.com/lovitus/flyssh) to reach Mihomo instances behind SSH (listening on `127.0.0.1`)
-- **Auto-start tunnels** — tunnels can be configured to start automatically on launch
-- **Cross-platform** — Windows, macOS, Linux (Android via CI)
-- **Lightweight** — native WebView, ~12 MB installer
+- Desktop/mobile wrapper for zashboard
+- Multi-backend management
+- Tunnel integration (`gust` / `slider`) and auto-start
+- Upstream UI version manager (download, activate, deactivate, delete)
+- Android CI packaging
 
-## Download
+## Current Release Targets (CI Policy)
 
-Download the latest release from the [Releases](https://github.com/lovitus/zashboard-wsf/releases) page:
+Release workflow currently builds:
 
-- **Windows**: `zashboard_x.x.x_x64-setup.exe` (NSIS installer)
-- **macOS**: `zashboard_x.x.x_aarch64.dmg` / `zashboard_x.x.x_x64.dmg`
-- **Linux**: `zashboard_x.x.x_amd64.deb` / `zashboard_x.x.x_amd64.AppImage`
-- **Android**: `zashboard_x.x.x.apk`
+- Windows x64 (`x86_64-pc-windows-msvc`)
+- Windows x86 (`i686-pc-windows-msvc`)
+- macOS Apple Silicon (`aarch64-apple-darwin`)
+- Android APK (separate `build-android` job)
 
-## Tunnel Forwarding
+Temporarily disabled in CI:
 
-When adding a Mihomo backend, enable **Port Forwarding Tunnel** to connect to instances behind SSH:
+- macOS Intel
+- Linux targets
+- iOS and other architectures
 
-| Tool | Example Args |
-|------|-------------|
-| **slider** | `-listen ltcp://:19090/127.0.0.1:9090 -forward ssh://user@host:22` |
-| **gust** | `-L tcp://:19090/127.0.0.1:9090 -F relay+ssh://user@host:22` |
-| **flyssh** | `-L 19090:127.0.0.1:9090 user@host` |
+Details are documented inline in [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
-The tunnel tool binary (`slider`, `gust`, or `flyssh`) must be in your system PATH.
+## Upstream UI Mode (Important)
+
+When a user activates a non-built-in UI version:
+
+- The selected UI is hosted by a local HTTP server (`127.0.0.1:random_port`)
+- Built-in UI is still used for setup/config/tunnel management
+- Entering backend from setup/select flow can jump to the active upstream UI
+- `Built-in UI` button in upstream page requests backend-side deactivation and returns to built-in page
+
+Notes:
+
+- Upstream UI mode depends on request proxying and localStorage transfer between origins.
+- Transient `502` / network errors may still occur depending on upstream UI behavior and backend state.
 
 ## Development
 
@@ -38,7 +47,7 @@ The tunnel tool binary (`slider`, `gust`, or `flyssh`) must be in your system PA
 
 - [Node.js](https://nodejs.org/) >= 22
 - [pnpm](https://pnpm.io/) >= 10
-- [Rust](https://rustup.rs/) >= 1.85
+- [Rust](https://rustup.rs/) (stable)
 
 ### Setup
 
@@ -48,61 +57,63 @@ cd zashboard-wsf
 pnpm install
 ```
 
-### Dev mode
+### Dev
 
 ```bash
 pnpm tauri dev
 ```
 
-### Production build
+### Local Checks
+
+```bash
+pnpm -s vue-tsc --noEmit
+pnpm -s eslint .
+cargo check --manifest-path src-tauri/Cargo.toml
+```
+
+## Build / Release
+
+### Local Build
 
 ```bash
 pnpm tauri build
-# or specific bundle:
-pnpm tauri build -- --bundles nsis   # Windows NSIS
-pnpm tauri build -- --bundles dmg    # macOS DMG
-pnpm tauri build -- --bundles deb    # Linux DEB
 ```
 
-## Syncing with upstream zashboard
+### CI Release Trigger
 
-This project is based on [Zephyruso/zashboard](https://github.com/Zephyruso/zashboard) v2.7.0. To sync with upstream:
+`release.yml` is triggered by:
+
+- Push tag: `v*`
+- Manual `workflow_dispatch`
+
+Example:
 
 ```bash
-# Add upstream remote (one time)
-git remote add upstream https://github.com/Zephyruso/zashboard.git
-
-# Fetch and merge
-git fetch upstream
-git merge upstream/main
-# Resolve conflicts in modified files:
-#   - src/types/index.d.ts (TunnelConfig type)
-#   - src/components/settings/EditBackendModal.vue (tunnel UI)
-#   - src/i18n/*.ts (tunnel translations)
-#   - vite.config.ts (Tauri integration)
-#   - package.json (Tauri dependencies)
+git tag v0.2.20
+git push origin v0.2.20
 ```
 
-Only a few files are modified from upstream — merge conflicts should be minimal.
+## Tunnel Usage
 
-## Project Structure
+When adding a Mihomo backend, enable tunnel to reach private endpoints.
 
+| Tool | Example Args |
+|------|-------------|
+| `slider` | `-listen ltcp://:19090/127.0.0.1:9090 -forward ssh://user@host:22` |
+| `gust` | `-L tcp://:19090/127.0.0.1:9090 -F relay+ssh://user@host:22` |
+
+## Repository Layout
+
+```text
+src/                Vue frontend (mostly upstream zashboard)
+src-tauri/          Rust backend (Tauri runtime, tunnel, UI manager)
+.github/workflows/  CI/CD workflows
 ```
-zashboard-wsf/
-├── src/                    # Vue.js frontend (from upstream zashboard)
-│   ├── api/tunnel.ts       # Tunnel IPC API (new)
-│   ├── types/index.d.ts    # Extended Backend type with TunnelConfig
-│   └── components/settings/
-│       └── EditBackendModal.vue  # Tunnel config UI (extended)
-├── src-tauri/              # Rust backend (Tauri v2)
-│   ├── src/lib.rs          # Tunnel process management, IPC commands
-│   ├── tauri.conf.json     # Tauri configuration
-│   └── capabilities/       # Permission scopes
-├── .github/workflows/      # CI/CD
-│   └── release.yml         # Cross-platform build + release
-└── vite.config.ts          # Vite config with Tauri integration
-```
+
+## Maintenance
+
+- Release checklist: [readme/MAINTENANCE.md](readme/MAINTENANCE.md)
 
 ## License
 
-MIT — based on [zashboard](https://github.com/Zephyruso/zashboard) by Zephyruso
+MIT. Based on zashboard by Zephyruso.

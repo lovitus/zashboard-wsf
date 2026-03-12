@@ -44,6 +44,7 @@ axios.interceptors.response.use(
       nextTick(() => {
         showNotification({ content: 'unauthorizedTip' })
       })
+      return Promise.reject(error)
     } else if (!ignoreNotificationUrls.some((url) => error.config?.url?.endsWith(url))) {
       const errorMessage = error.response?.data?.message || error.message
 
@@ -55,7 +56,7 @@ axios.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    return error
+    return Promise.reject(error)
   },
 )
 
