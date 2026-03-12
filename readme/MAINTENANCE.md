@@ -28,5 +28,12 @@ This file tracks practical checks to run before each tagged release.
 
 ## 5) Security Follow-ups (Open)
 
-- Move Android signing/decrypt passwords out of workflow YAML into secrets
 - Review whether upstream storage snapshot should be encrypted at rest
+
+## Android Release Secrets
+
+The Android signing step in `release.yml` expects these repository secrets:
+
+- `ANDROID_KEYSTORE_ARCHIVE_PASSWORD`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS` (optional, defaults to `zashboard`)
