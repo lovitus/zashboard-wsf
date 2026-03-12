@@ -34,10 +34,16 @@ This file tracks practical checks to run before each tagged release.
 
 The Android signing step in `release.yml` expects these repository secrets:
 
+- `ANDROID_KEYSTORE_BASE64` (recommended)
 - `ANDROID_KEYSTORE_ARCHIVE_PASSWORD`
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_ALIAS` (optional, defaults to `zashboard`)
 
 Notes:
-- The workflow first tries `ANDROID_KEYSTORE_ARCHIVE_PASSWORD` to decrypt `android_keystore_encrypted.zip`.
-- If that fails, it automatically retries with `ANDROID_KEYSTORE_PASSWORD` for compatibility.
+- If `ANDROID_KEYSTORE_BASE64` is provided, CI decodes it directly and does not depend on zip passwords.
+- If `ANDROID_KEYSTORE_BASE64` is empty, CI falls back to decrypting `android_keystore_encrypted.zip`:
+  - first with `ANDROID_KEYSTORE_ARCHIVE_PASSWORD`
+  - then with `ANDROID_KEYSTORE_PASSWORD`
+
+Example (PowerShell) to generate `ANDROID_KEYSTORE_BASE64`:
+- `[Convert]::ToBase64String([IO.File]::ReadAllBytes("zashboard-release.keystore"))`

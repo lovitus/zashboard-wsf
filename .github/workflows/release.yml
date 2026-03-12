@@ -296,6 +296,7 @@ jobs:
 
       - name: Sign APK
         env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_ARCHIVE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_ARCHIVE_PASSWORD }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -303,25 +304,37 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/ks
 
-          # Decrypt keystore from encrypted zip.
-          # First try ANDROID_KEYSTORE_ARCHIVE_PASSWORD; if it fails, fall back to ANDROID_KEYSTORE_PASSWORD.
-          # This keeps compatibility when users encrypted the zip with the same keystore password.
-          rm -rf /tmp/ks/*
-          if ! 7z x -y -p"${ANDROID_KEYSTORE_ARCHIVE_PASSWORD:-}" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/ >/tmp/ks_unzip.log 2>&1; then
-            echo "Archive password failed, retrying with ANDROID_KEYSTORE_PASSWORD ..."
-            rm -rf /tmp/ks/*
-            if ! 7z x -y -p"${ANDROID_KEYSTORE_PASSWORD:-}" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/ >/tmp/ks_unzip.log 2>&1; then
-              echo "ERROR: Failed to decrypt src-tauri/android_keystore_encrypted.zip"
-              echo "Check secret ANDROID_KEYSTORE_ARCHIVE_PASSWORD (or set it equal to ANDROID_KEYSTORE_PASSWORD)."
-              sed -n '1,120p' /tmp/ks_unzip.log || true
+          # Priority:
+          # 1) ANDROID_KEYSTORE_BASE64 (recommended, no zip password dependency)
+          # 2) encrypted zip + ANDROID_KEYSTORE_ARCHIVE_PASSWORD
+          # 3) encrypted zip + ANDROID_KEYSTORE_PASSWORD (compat fallback)
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "Using ANDROID_KEYSTORE_BASE64 for signing keystore."
+            if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > /tmp/ks/release.keystore 2>/tmp/ks_decode.log; then
+              echo "ERROR: ANDROID_KEYSTORE_BASE64 is invalid base64 content."
+              sed -n '1,120p' /tmp/ks_decode.log || true
               exit 2
             fi
-          fi
-
-          KS_FILE="$(find /tmp/ks -name "*.keystore" | head -1)"
-          if [ -z "$KS_FILE" ]; then
-            echo "ERROR: keystore file not found after archive extraction."
-            exit 2
+            KS_FILE="/tmp/ks/release.keystore"
+          else
+            rm -rf /tmp/ks/*
+            if ! 7z x -y -p"${ANDROID_KEYSTORE_ARCHIVE_PASSWORD:-}" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/ >/tmp/ks_unzip.log 2>&1; then
+              echo "Archive password failed, retrying with ANDROID_KEYSTORE_PASSWORD ..."
+              rm -rf /tmp/ks/*
+              if ! 7z x -y -p"${ANDROID_KEYSTORE_PASSWORD:-}" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/ >/tmp/ks_unzip.log 2>&1; then
+                echo "ERROR: Failed to decrypt src-tauri/android_keystore_encrypted.zip"
+                echo "Fix one of the following:"
+                echo "1) Set ANDROID_KEYSTORE_BASE64 (recommended), or"
+                echo "2) Set correct ANDROID_KEYSTORE_ARCHIVE_PASSWORD."
+                sed -n '1,120p' /tmp/ks_unzip.log || true
+                exit 2
+              fi
+            fi
+            KS_FILE="$(find /tmp/ks -name "*.keystore" | head -1)"
+            if [ -z "$KS_FILE" ]; then
+              echo "ERROR: keystore file not found after archive extraction."
+              exit 2
+            fi
           fi
 
           KEY_ALIAS="${ANDROID_KEY_ALIAS:-zashboard}"
