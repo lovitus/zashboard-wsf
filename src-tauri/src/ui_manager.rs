@@ -335,50 +335,10 @@ pub async fn ui_activate_version(
         write_active_version(&s.base_dir, Some(&tag));
     }
 
-    // Desktop: open upstream UI in a new window
-    #[cfg(desktop)]
-    {
-        open_upstream_window(&app)?;
-    }
+    // Navigate main window to upstream UI via zui:// protocol
+    navigate_main_window(&app, "zui://localhost/");
 
     Ok(format!("Activated version {}", tag))
-}
-
-#[cfg(desktop)]
-fn open_upstream_window(app: &AppHandle) -> Result<(), String> {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-
-    // Close existing upstream window if open
-    if let Some(existing) = app.get_webview_window("upstream-ui") {
-        let _ = existing.close();
-        // Small delay to let the window close
-        std::thread::sleep(Duration::from_millis(100));
-    }
-
-    let url = "zui://localhost/".parse::<url::Url>().map_err(|e| format!("URL parse error: {}", e))?;
-
-    WebviewWindowBuilder::new(app, "upstream-ui", WebviewUrl::External(url))
-        .title("Zashboard (Upstream)")
-        .inner_size(1200.0, 800.0)
-        .min_inner_size(400.0, 600.0)
-        .build()
-        .map_err(|e| format!("Failed to open upstream UI window: {}", e))?;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn ui_open_upstream(app: AppHandle) -> Result<String, String> {
-    #[cfg(desktop)]
-    {
-        open_upstream_window(&app)?;
-        Ok("Upstream UI window opened".to_string())
-    }
-    #[cfg(not(desktop))]
-    {
-        let _ = app;
-        Err("Opening upstream UI window is only supported on desktop".to_string())
-    }
 }
 
 #[tauri::command]
@@ -392,15 +352,33 @@ pub async fn ui_deactivate(
         write_active_version(&s.base_dir, None);
     }
 
-    // Close upstream UI window if open
-    #[cfg(desktop)]
-    if let Some(window) = app.get_webview_window("upstream-ui") {
-        let _ = window.close();
-    }
-
-    let _ = app; // suppress unused warning on mobile
+    // Navigate main window back to built-in UI
+    navigate_main_window(&app, "tauri://localhost/");
 
     Ok("Switched to built-in UI".to_string())
+}
+
+fn navigate_main_window(app: &AppHandle, url_str: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        // Try navigate API first, fall back to eval
+        if let Ok(url) = url_str.parse::<url::Url>() {
+            match window.navigate(url) {
+                Ok(_) => return,
+                Err(e) => eprintln!("navigate() failed: {}, trying eval fallback", e),
+            }
+        }
+        // Fallback: try both tauri:// and https://tauri.localhost/ schemes
+        let js = if url_str.starts_with("tauri://") {
+            format!(
+                "try{{window.location.href='{}'}}catch(e){{window.location.href='{}'}}",
+                url_str,
+                url_str.replace("tauri://localhost", "https://tauri.localhost")
+            )
+        } else {
+            format!("window.location.href='{}'", url_str)
+        };
+        let _ = window.eval(&js);
+    }
 }
 
 #[tauri::command]
@@ -512,7 +490,6 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         window.__TAURI_INTERNALS__.invoke('ui_deactivate').catch(function(){});
       }
     }catch(e){}
-    setTimeout(function(){try{window.close()}catch(e){}},200);
   };
   document.body.appendChild(btn);
 })();

@@ -856,15 +856,21 @@ pub fn run() {
 
     let ui_state = ui_manager::init_state();
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // When a second instance is launched, focus the existing main window
+    let mut builder = tauri::Builder::default();
+
+    // Single instance: desktop only (not available on mobile)
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
                 let _ = w.set_focus();
                 let _ = w.show();
             }
-        }))
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .manage(Mutex::new(ts))
@@ -887,7 +893,6 @@ pub fn run() {
             ui_manager::ui_deactivate,
             ui_manager::ui_get_info,
             ui_manager::ui_delete_version,
-            ui_manager::ui_open_upstream,
             ui_manager::ui_set_custom_urls,
         ])
         .setup(move |app| {

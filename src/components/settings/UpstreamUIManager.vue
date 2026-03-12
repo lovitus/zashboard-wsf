@@ -36,21 +36,13 @@
       <div class="text-sm">
         {{ $t('upstreamActiveDesc', { version: info.active_version }) }}
       </div>
-      <div class="flex gap-1">
-        <button
-          class="btn btn-primary btn-xs btn-outline"
-          @click="handleOpenUpstream"
-        >
-          {{ $t('upstreamOpen') }}
-        </button>
-        <button
-          class="btn btn-warning btn-xs btn-outline"
-          :disabled="switching"
-          @click="handleDeactivate"
-        >
-          {{ $t('upstreamSwitchBuiltin') }}
-        </button>
-      </div>
+      <button
+        class="btn btn-warning btn-xs btn-outline"
+        :disabled="switching"
+        @click="handleDeactivate"
+      >
+        {{ $t('upstreamSwitchBuiltin') }}
+      </button>
     </div>
 
     <!-- Fetch releases -->
@@ -237,7 +229,6 @@ import {
   uiDownloadVersion,
   uiFetchReleases,
   uiGetInfo,
-  uiOpenUpstream,
   uiSetCustomUrls,
 } from '@/api/ui_manager'
 import { computed, onMounted, ref } from 'vue'
@@ -318,15 +309,6 @@ const handleActivate = async (tag: string) => {
     error.value = String(e)
   } finally {
     switching.value = false
-  }
-}
-
-const handleOpenUpstream = async () => {
-  error.value = ''
-  try {
-    await uiOpenUpstream()
-  } catch (e) {
-    error.value = String(e)
   }
 }
 

@@ -349,7 +349,6 @@ const en = {
   upstreamDownload: 'Download',
   upstreamActivate: 'Use',
   upstreamLocalOnly: 'Local versions',
-  upstreamOpen: 'Open',
   upstreamCustomUrl: 'Custom URL',
   upstreamReleasesUrl: 'Releases API URL',
   upstreamDownloadBase: 'Download base URL',

@@ -352,7 +352,6 @@ const ru: LANG_MESSAGE = {
   upstreamDownload: 'Загрузить',
   upstreamActivate: 'Использовать',
   upstreamLocalOnly: 'Локальные версии',
-  upstreamOpen: 'Открыть',
   upstreamCustomUrl: 'Пользовательский URL',
   upstreamReleasesUrl: 'URL API релизов',
   upstreamDownloadBase: 'Базовый URL загрузки',

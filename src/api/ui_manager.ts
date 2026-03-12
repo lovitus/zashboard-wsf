@@ -50,10 +50,6 @@ export async function uiDeleteVersion(tag: string): Promise<string> {
   return invoke<string>('ui_delete_version', { tag })
 }
 
-export async function uiOpenUpstream(): Promise<string> {
-  return invoke<string>('ui_open_upstream')
-}
-
 export async function uiSetCustomUrls(
   releasesUrl: string | null,
   downloadBase: string | null,
