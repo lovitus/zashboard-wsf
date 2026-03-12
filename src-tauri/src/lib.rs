@@ -204,6 +204,7 @@ fn save_configs(configs: &[TunnelConfig], path: &PathBuf) {
 const GUST_GZ: &[u8] = include_bytes!("../embed/gust.gz");
 const SLIDER_GZ: &[u8] = include_bytes!("../embed/slider.gz");
 
+#[allow(dead_code)]
 fn get_sidecar_cache_dir() -> PathBuf {
     let dir = dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -878,6 +879,8 @@ pub fn run() {
             ui_manager::ui_deactivate,
             ui_manager::ui_get_info,
             ui_manager::ui_delete_version,
+            ui_manager::ui_open_upstream,
+            ui_manager::ui_set_custom_urls,
         ])
         .setup(move |app| {
             // --- Mobile: fix config path using Tauri's app data dir ---
@@ -971,9 +974,9 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app_handle, event| {
+        .run(|_app_handle, _event| {
             #[cfg(desktop)]
-            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+            if let tauri::RunEvent::ExitRequested { api, .. } = &_event {
                 // Only prevent exit for window-close events, not explicit Quit
                 if !SHOULD_EXIT.load(Ordering::SeqCst) {
                     api.prevent_exit();

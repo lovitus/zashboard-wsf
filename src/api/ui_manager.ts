@@ -17,6 +17,8 @@ export interface UpstreamAsset {
 export interface UiVersionInfo {
   active_version: string | null
   downloaded_versions: DownloadedVersion[]
+  custom_releases_url: string | null
+  custom_download_base: string | null
 }
 
 export interface DownloadedVersion {
@@ -46,4 +48,18 @@ export async function uiGetInfo(): Promise<UiVersionInfo> {
 
 export async function uiDeleteVersion(tag: string): Promise<string> {
   return invoke<string>('ui_delete_version', { tag })
+}
+
+export async function uiOpenUpstream(): Promise<string> {
+  return invoke<string>('ui_open_upstream')
+}
+
+export async function uiSetCustomUrls(
+  releasesUrl: string | null,
+  downloadBase: string | null,
+): Promise<string> {
+  return invoke<string>('ui_set_custom_urls', {
+    releasesUrl: releasesUrl || null,
+    downloadBase: downloadBase || null,
+  })
 }

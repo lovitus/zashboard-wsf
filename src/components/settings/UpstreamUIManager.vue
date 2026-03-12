@@ -36,13 +36,21 @@
       <div class="text-sm">
         {{ $t('upstreamActiveDesc', { version: info.active_version }) }}
       </div>
-      <button
-        class="btn btn-warning btn-xs btn-outline"
-        :disabled="switching"
-        @click="handleDeactivate"
-      >
-        {{ $t('upstreamSwitchBuiltin') }}
-      </button>
+      <div class="flex gap-1">
+        <button
+          class="btn btn-primary btn-xs btn-outline"
+          @click="handleOpenUpstream"
+        >
+          {{ $t('upstreamOpen') }}
+        </button>
+        <button
+          class="btn btn-warning btn-xs btn-outline"
+          :disabled="switching"
+          @click="handleDeactivate"
+        >
+          {{ $t('upstreamSwitchBuiltin') }}
+        </button>
+      </div>
     </div>
 
     <!-- Fetch releases -->
@@ -172,6 +180,51 @@
         </div>
       </div>
     </div>
+
+    <!-- Custom URL settings -->
+    <div class="flex flex-col gap-1">
+      <button
+        class="btn btn-ghost btn-xs text-base-content/50 self-start"
+        @click="showCustomUrl = !showCustomUrl"
+      >
+        {{ $t('upstreamCustomUrl') }}
+      </button>
+      <div
+        v-if="showCustomUrl"
+        class="flex flex-col gap-2"
+      >
+        <div class="flex flex-col gap-1">
+          <span class="text-base-content/50 text-[10px]">{{ $t('upstreamReleasesUrl') }}</span>
+          <input
+            v-model="customReleasesUrl"
+            class="input input-xs w-full"
+            :placeholder="'https://api.github.com/repos/Zephyruso/zashboard/releases'"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <span class="text-base-content/50 text-[10px]">{{ $t('upstreamDownloadBase') }}</span>
+          <input
+            v-model="customDownloadBase"
+            class="input input-xs w-full"
+            :placeholder="'https://github.com/Zephyruso/zashboard/releases/download'"
+          />
+        </div>
+        <div class="flex gap-1">
+          <button
+            class="btn btn-primary btn-xs"
+            @click="handleSaveCustomUrls"
+          >
+            {{ $t('save') }}
+          </button>
+          <button
+            class="btn btn-ghost btn-xs"
+            @click="handleClearCustomUrls"
+          >
+            {{ $t('upstreamClearCustom') }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -184,6 +237,8 @@ import {
   uiDownloadVersion,
   uiFetchReleases,
   uiGetInfo,
+  uiOpenUpstream,
+  uiSetCustomUrls,
 } from '@/api/ui_manager'
 import { computed, onMounted, ref } from 'vue'
 
@@ -193,6 +248,9 @@ const loading = ref(false)
 const downloading = ref<string | null>(null)
 const switching = ref(false)
 const error = ref('')
+const showCustomUrl = ref(false)
+const customReleasesUrl = ref('')
+const customDownloadBase = ref('')
 
 const isDownloaded = (tag: string) => {
   return info.value?.downloaded_versions.some((v) => v.tag === tag) ?? false
@@ -217,6 +275,8 @@ const formatBytes = (bytes: number) => {
 const refreshInfo = async () => {
   try {
     info.value = await uiGetInfo()
+    customReleasesUrl.value = info.value.custom_releases_url || ''
+    customDownloadBase.value = info.value.custom_download_base || ''
   } catch (e) {
     console.error('Failed to get UI info:', e)
   }
@@ -253,9 +313,20 @@ const handleActivate = async (tag: string) => {
   error.value = ''
   try {
     await uiActivateVersion(tag)
+    await refreshInfo()
   } catch (e) {
     error.value = String(e)
+  } finally {
     switching.value = false
+  }
+}
+
+const handleOpenUpstream = async () => {
+  error.value = ''
+  try {
+    await uiOpenUpstream()
+  } catch (e) {
+    error.value = String(e)
   }
 }
 
@@ -264,8 +335,10 @@ const handleDeactivate = async () => {
   error.value = ''
   try {
     await uiDeactivate()
+    await refreshInfo()
   } catch (e) {
     error.value = String(e)
+  } finally {
     switching.value = false
   }
 }
@@ -278,6 +351,22 @@ const handleDelete = async (tag: string) => {
   } catch (e) {
     error.value = String(e)
   }
+}
+
+const handleSaveCustomUrls = async () => {
+  error.value = ''
+  try {
+    await uiSetCustomUrls(customReleasesUrl.value, customDownloadBase.value)
+    await refreshInfo()
+  } catch (e) {
+    error.value = String(e)
+  }
+}
+
+const handleClearCustomUrls = async () => {
+  customReleasesUrl.value = ''
+  customDownloadBase.value = ''
+  await handleSaveCustomUrls()
 }
 
 onMounted(refreshInfo)

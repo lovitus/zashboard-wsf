@@ -212,7 +212,7 @@ jobs:
 
           # Create network security config allowing cleartext for localhost and LAN
           mkdir -p "$RES_XML"
-          cat > "$RES_XML/network_security_config.xml" <<- 'NSEOF'
+          cat > "$RES_XML/network_security_config.xml" << 'NSEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <network-security-config>
             <base-config cleartextTrafficPermitted="true">
@@ -223,16 +223,40 @@ jobs:
           </network-security-config>
           NSEOF
 
-          # Ensure network permissions
-          if ! grep -q 'ACCESS_NETWORK_STATE' "$MANIFEST"; then
-            sed -i '/<uses-permission.*INTERNET/a\    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' "$MANIFEST"
-          fi
+          # Use Python for robust XML manipulation (avoids sed mangling)
+          python3 << 'PYEOF'
+          import re, sys
 
-          # Modify <application> tag: extractNativeLibs + cleartext + networkSecurityConfig
-          sed -i 's/<application/<application android:extractNativeLibs="true" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml\/network_security_config"/' "$MANIFEST"
+          manifest_path = "src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+          with open(manifest_path, "r") as f:
+              content = f.read()
 
-          # Add windowSoftInputMode=adjustResize to the first <activity> (keyboard fix)
-          sed -i '0,/<activity/{s/<activity/<activity android:windowSoftInputMode="adjustResize"/}' "$MANIFEST"
+          # Add ACCESS_NETWORK_STATE permission if missing
+          if "ACCESS_NETWORK_STATE" not in content:
+              content = content.replace(
+                  "</manifest>",
+                  '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n</manifest>'
+              )
+
+          # Add attributes to <application> tag (idempotent)
+          app_attrs = {
+              "android:extractNativeLibs": '"true"',
+              "android:usesCleartextTraffic": '"true"',
+              "android:networkSecurityConfig": '"@xml/network_security_config"',
+          }
+          for attr, val in app_attrs.items():
+              if attr not in content:
+                  content = content.replace("<application", f"<application {attr}={val}", 1)
+
+          # Add windowSoftInputMode to first <activity> (idempotent)
+          if "windowSoftInputMode" not in content:
+              content = content.replace("<activity", '<activity android:windowSoftInputMode="adjustResize"', 1)
+
+          with open(manifest_path, "w") as f:
+              f.write(content)
+
+          print("AndroidManifest.xml patched successfully")
+          PYEOF
 
           echo "=== AndroidManifest.xml ==="
           cat "$MANIFEST"

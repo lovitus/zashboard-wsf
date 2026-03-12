@@ -346,6 +346,11 @@ const zh: LANG_MESSAGE = {
   upstreamDownload: '下载',
   upstreamActivate: '使用',
   upstreamLocalOnly: '本地版本',
+  upstreamOpen: '打开',
+  upstreamCustomUrl: '自定义URL',
+  upstreamReleasesUrl: '版本列表API地址',
+  upstreamDownloadBase: '下载基础地址',
+  upstreamClearCustom: '恢复默认',
 }
 
 export default zh
