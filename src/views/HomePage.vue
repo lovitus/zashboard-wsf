@@ -13,7 +13,7 @@
           v-if="isMiddleScreen"
           class="btn btn-primary btn-xs absolute left-2 z-40"
           :style="{ top: 'calc(8px + env(safe-area-inset-top))' }"
-          @click="router.push({ name: ROUTE_NAME.setup })"
+          @click.stop.prevent="goToSetupManager"
         >
           {{ $t('setup') }}
         </button>
@@ -90,7 +90,7 @@ import SideBar from '@/components/sidebar/SideBar.vue'
 import { dockTop } from '@/composables/paddingViews'
 import { useSettings } from '@/composables/settings'
 import { useSwipeRouter } from '@/composables/swipe'
-import { PROXY_TAB_TYPE, ROUTE_ICON_MAP, RULE_TAB_TYPE } from '@/constant'
+import { PROXY_TAB_TYPE, ROUTE_ICON_MAP, ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
 import { renderRoutes } from '@/helper'
 import { showNotification } from '@/helper/notification'
 import { getLabelFromBackend, isMiddleScreen } from '@/helper/utils'
@@ -140,6 +140,28 @@ watch(
 )
 
 const autoSwitchBackendDialog = ref(false)
+
+const goToSetupManager = async () => {
+  try {
+    await router.replace({ name: ROUTE_NAME.setup })
+    if (router.currentRoute.value.name === ROUTE_NAME.setup) return
+  } catch {}
+
+  try {
+    await router.push({ name: ROUTE_NAME.setup })
+    if (router.currentRoute.value.name === ROUTE_NAME.setup) return
+  } catch {}
+
+  if (window.location.hash !== '#/setup') {
+    window.location.hash = '#/setup'
+  }
+
+  setTimeout(() => {
+    if (!window.location.hash.includes('/setup')) {
+      window.location.href = `${window.location.origin}${window.location.pathname}#/setup`
+    }
+  }, 180)
+}
 
 const autoSwitchBackend = async () => {
   const otherEnds = backendList.value.filter((end) => end.uuid !== activeUuid.value)

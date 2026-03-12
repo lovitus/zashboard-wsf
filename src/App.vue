@@ -131,8 +131,9 @@ const appStyle = computed(() => {
   if (!isAndroidApp) {
     return base
   }
-  // Keep fixed top/bottom space on Android to avoid status/navigation bar overlap.
-  return `${base};padding-top:16px;padding-bottom:16px;box-sizing:border-box;`
+  // Keep large fixed top/bottom space on Android to avoid status/navigation bar overlap.
+  // User requested significantly larger spacing.
+  return `${base};padding-top:calc(env(safe-area-inset-top) + 56px);padding-bottom:calc(env(safe-area-inset-bottom) + 56px);box-sizing:border-box;`
 })
 
 useKeyboard()
