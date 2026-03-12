@@ -5798,7 +5798,6 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
  "tokio",
- "url",
  "uuid",
  "zip",
 ]

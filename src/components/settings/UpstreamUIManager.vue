@@ -303,8 +303,12 @@ const handleActivate = async (tag: string) => {
   switching.value = true
   error.value = ''
   try {
-    await uiActivateVersion(tag)
+    const url = await uiActivateVersion(tag)
     await refreshInfo()
+    // Navigate to the upstream UI served on local HTTP server
+    if (url && url.startsWith('http')) {
+      window.location.href = url
+    }
   } catch (e) {
     error.value = String(e)
   } finally {

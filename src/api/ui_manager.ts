@@ -19,6 +19,7 @@ export interface UiVersionInfo {
   downloaded_versions: DownloadedVersion[]
   custom_releases_url: string | null
   custom_download_base: string | null
+  upstream_url: string | null
 }
 
 export interface DownloadedVersion {

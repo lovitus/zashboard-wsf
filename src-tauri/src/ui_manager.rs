@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamRelease {
@@ -31,6 +32,8 @@ pub struct UiManagerState {
     pub base_dir: PathBuf,
     pub custom_releases_url: Option<String>,
     pub custom_download_base: Option<String>,
+    pub server_port: Option<u16>,
+    pub server_shutdown: Option<Arc<AtomicBool>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +42,7 @@ pub struct UiVersionInfo {
     pub downloaded_versions: Vec<DownloadedVersion>,
     pub custom_releases_url: Option<String>,
     pub custom_download_base: Option<String>,
+    pub upstream_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,11 +133,33 @@ pub fn init_state() -> UiManagerState {
     let custom_releases_url = read_custom_url(&base_dir, CUSTOM_RELEASES_URL_FILE);
     let custom_download_base = read_custom_url(&base_dir, CUSTOM_DOWNLOAD_BASE_FILE);
 
+    // If a version was previously active, start the file server
+    let (server_port, server_shutdown) = if let Some(ref ver) = active_version {
+        let version_dir = base_dir.join(ver);
+        if version_dir.join("index.html").exists() {
+            match start_file_server(version_dir) {
+                Ok((port, shutdown)) => {
+                    eprintln!("Resumed file server for {} on port {}", ver, port);
+                    (Some(port), Some(shutdown))
+                }
+                Err(e) => {
+                    eprintln!("WARNING: Failed to start file server for {}: {}", ver, e);
+                    (None, None)
+                }
+            }
+        } else {
+            eprintln!("WARNING: Active version {} not found on disk, ignoring", ver);
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+
     eprintln!(
-        "UI manager: base_dir={}, active={:?}, custom_url={:?}",
+        "UI manager: base_dir={}, active={:?}, server_port={:?}",
         base_dir.display(),
         active_version,
-        custom_releases_url
+        server_port
     );
 
     UiManagerState {
@@ -141,6 +167,8 @@ pub fn init_state() -> UiManagerState {
         base_dir,
         custom_releases_url,
         custom_download_base,
+        server_port,
+        server_shutdown,
     }
 }
 
@@ -321,64 +349,52 @@ fn extract_zip(bytes: &[u8], version_dir: &PathBuf) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn ui_activate_version(
-    app: AppHandle,
     state: State<'_, Mutex<UiManagerState>>,
     tag: String,
 ) -> Result<String, String> {
-    {
-        let mut s = state.lock().map_err(|e| e.to_string())?;
-        let version_dir = s.base_dir.join(&tag);
-        if !version_dir.join("index.html").exists() {
-            return Err(format!("Version {} not found or incomplete", tag));
-        }
-        s.active_version = Some(tag.clone());
-        write_active_version(&s.base_dir, Some(&tag));
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+    let version_dir = s.base_dir.join(&tag);
+    if !version_dir.join("index.html").exists() {
+        return Err(format!("Version {} not found or incomplete", tag));
     }
 
-    // Navigate main window to upstream UI via zui:// protocol
-    navigate_main_window(&app, "zui://localhost/");
+    // Stop existing server if running
+    if let Some(ref shutdown) = s.server_shutdown {
+        shutdown.store(true, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(100));
+    }
 
-    Ok(format!("Activated version {}", tag))
+    // Start new file server for this version
+    let (port, shutdown) = start_file_server(version_dir)?;
+
+    s.active_version = Some(tag.clone());
+    s.server_port = Some(port);
+    s.server_shutdown = Some(shutdown);
+    write_active_version(&s.base_dir, Some(&tag));
+
+    let url = format!("http://127.0.0.1:{}", port);
+    eprintln!("Activated upstream UI version {} at {}", tag, url);
+    Ok(url)
 }
 
 #[tauri::command]
 pub async fn ui_deactivate(
-    app: AppHandle,
     state: State<'_, Mutex<UiManagerState>>,
 ) -> Result<String, String> {
-    {
-        let mut s = state.lock().map_err(|e| e.to_string())?;
-        s.active_version = None;
-        write_active_version(&s.base_dir, None);
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+
+    // Stop file server
+    if let Some(ref shutdown) = s.server_shutdown {
+        shutdown.store(true, Ordering::Relaxed);
     }
 
-    // Navigate main window back to built-in UI
-    navigate_main_window(&app, "tauri://localhost/");
+    s.active_version = None;
+    s.server_port = None;
+    s.server_shutdown = None;
+    write_active_version(&s.base_dir, None);
 
+    eprintln!("Deactivated upstream UI, switched to built-in");
     Ok("Switched to built-in UI".to_string())
-}
-
-fn navigate_main_window(app: &AppHandle, url_str: &str) {
-    if let Some(window) = app.get_webview_window("main") {
-        // Try navigate API first, fall back to eval
-        if let Ok(url) = url_str.parse::<url::Url>() {
-            match window.navigate(url) {
-                Ok(_) => return,
-                Err(e) => eprintln!("navigate() failed: {}, trying eval fallback", e),
-            }
-        }
-        // Fallback: try both tauri:// and https://tauri.localhost/ schemes
-        let js = if url_str.starts_with("tauri://") {
-            format!(
-                "try{{window.location.href='{}'}}catch(e){{window.location.href='{}'}}",
-                url_str,
-                url_str.replace("tauri://localhost", "https://tauri.localhost")
-            )
-        } else {
-            format!("window.location.href='{}'", url_str)
-        };
-        let _ = window.eval(&js);
-    }
 }
 
 #[tauri::command]
@@ -404,11 +420,14 @@ pub async fn ui_get_info(
 
     downloaded.sort_by(|a, b| b.tag.cmp(&a.tag));
 
+    let upstream_url = s.server_port.map(|p| format!("http://127.0.0.1:{}", p));
+
     Ok(UiVersionInfo {
         active_version: s.active_version.clone(),
         downloaded_versions: downloaded,
         custom_releases_url: s.custom_releases_url.clone(),
         custom_download_base: s.custom_download_base.clone(),
+        upstream_url,
     })
 }
 
@@ -453,7 +472,7 @@ pub async fn ui_delete_version(
     Ok(format!("Deleted version {}", tag))
 }
 
-// --- Protocol handler ---
+// --- Local HTTP file server for upstream UI ---
 
 fn mime_type(path: &str) -> &'static str {
     let ext = path.rsplit('.').next().unwrap_or("");
@@ -473,6 +492,7 @@ fn mime_type(path: &str) -> &'static str {
         "otf" => "font/otf",
         "webp" => "image/webp",
         "wasm" => "application/wasm",
+        "map" => "application/json",
         _ => "application/octet-stream",
     }
 }
@@ -485,121 +505,183 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
   btn.onmouseenter=function(){btn.style.opacity='1'};
   btn.onmouseleave=function(){btn.style.opacity='0.85'};
   btn.onclick=function(){
-    try{
-      if(window.__TAURI_INTERNALS__){
-        window.__TAURI_INTERNALS__.invoke('ui_deactivate').catch(function(){});
-      }
-    }catch(e){}
+    // Navigate back to built-in Tauri UI (try both URL schemes)
+    window.location.href='https://tauri.localhost/';
+    setTimeout(function(){window.location.href='tauri://localhost/';},500);
   };
   document.body.appendChild(btn);
 })();
 </script>"#;
 
-pub fn handle_zui_protocol<R: tauri::Runtime>(
-    ctx: &tauri::UriSchemeContext<'_, R>,
-    request: tauri::http::Request<Vec<u8>>,
-) -> tauri::http::Response<Vec<u8>> {
-    let app = ctx.app_handle();
-    let state = app.state::<Mutex<UiManagerState>>();
-    let s = match state.lock() {
-        Ok(s) => s,
-        Err(_) => {
-            return tauri::http::Response::builder()
-                .status(500)
-                .header("Content-Type", "text/plain")
-                .body(b"Internal error: state lock failed".to_vec())
-                .unwrap();
+fn start_file_server(root_dir: PathBuf) -> Result<(u16, Arc<AtomicBool>), String> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("Failed to bind HTTP server: {}", e))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to get server address: {}", e))?
+        .port();
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("Failed to configure server: {}", e))?;
+
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_flag = shutdown.clone();
+
+    std::thread::spawn(move || {
+        eprintln!(
+            "File server started on 127.0.0.1:{} serving {}",
+            port,
+            root_dir.display()
+        );
+        while !shutdown_flag.load(Ordering::Relaxed) {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    let root = root_dir.clone();
+                    std::thread::spawn(move || {
+                        if let Err(e) = handle_http_request(stream, &root) {
+                            eprintln!("HTTP handler error: {}", e);
+                        }
+                    });
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => {
+                    if !shutdown_flag.load(Ordering::Relaxed) {
+                        eprintln!("HTTP accept error: {}", e);
+                    }
+                    break;
+                }
+            }
         }
-    };
+        eprintln!("File server on port {} stopped", port);
+    });
 
-    let active = match &s.active_version {
-        Some(v) => v.clone(),
-        None => {
-            return tauri::http::Response::builder()
-                .status(200)
-                .header("Content-Type", "text/html; charset=utf-8")
-                .body(b"<html><body><h2>No upstream UI active</h2><p>Select a version in the main window settings.</p><script>setTimeout(function(){try{window.close()}catch(e){}},2000);</script></body></html>".to_vec())
-                .unwrap();
-        }
-    };
+    Ok((port, shutdown))
+}
 
-    let version_dir = s.base_dir.join(&active);
-    drop(s);
+fn handle_http_request(
+    mut stream: std::net::TcpStream,
+    root: &std::path::Path,
+) -> Result<(), String> {
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    stream
+        .set_write_timeout(Some(Duration::from_secs(10)))
+        .ok();
 
-    if !version_dir.exists() {
-        return tauri::http::Response::builder()
-            .status(200)
-            .header("Content-Type", "text/html; charset=utf-8")
-            .body(format!("<html><body><h2>Version {} files not found</h2><p>The version directory may have been deleted.</p></body></html>", active).into_bytes())
-            .unwrap();
+    // Read request headers (up to 8KB)
+    let mut buf = [0u8; 8192];
+    let n = stream
+        .read(&mut buf)
+        .map_err(|e| format!("Read error: {}", e))?;
+    if n == 0 {
+        return Ok(());
     }
 
-    // Parse path from URI
-    let uri = request.uri().to_string();
-    let path = if let Some(rest) = uri.strip_prefix("zui://localhost") {
-        if rest.is_empty() { "/" } else { rest }
-    } else if let Some(rest) = uri.strip_prefix("zui://") {
-        if rest.is_empty() { "/" } else { rest }
-    } else {
-        "/"
-    };
+    let request = String::from_utf8_lossy(&buf[..n]);
+    let first_line = request.lines().next().unwrap_or("");
 
-    // Strip query string and hash
-    let path = path.split('?').next().unwrap_or("/");
+    // Parse "GET /path HTTP/1.1"
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return send_http_response(&mut stream, 400, "text/plain", b"Bad Request");
+    }
+
+    let raw_path = parts[1];
+
+    // Parse path, strip query/hash
+    let path = raw_path.split('?').next().unwrap_or("/");
     let path = path.split('#').next().unwrap_or("/");
-    let path = if path.is_empty() || path == "/" {
-        "index.html"
+    let decoded = percent_decode(path);
+    let clean_path = if decoded.is_empty() || decoded == "/" {
+        "index.html".to_string()
     } else {
-        path.trim_start_matches('/')
+        decoded.trim_start_matches('/').to_string()
     };
 
-    // Try to read the file
-    let file_path = version_dir.join(path);
-    let (body, content_type) = if file_path.exists() && file_path.is_file() {
-        let mut content = Vec::new();
-        if let Ok(mut f) = std::fs::File::open(&file_path) {
-            let _ = f.read_to_end(&mut content);
-        }
-        let mime = mime_type(path);
+    // Security: prevent path traversal
+    if clean_path.contains("..") {
+        return send_http_response(&mut stream, 403, "text/plain", b"Forbidden");
+    }
 
-        // Inject return button into HTML
+    let file_path = root.join(&clean_path);
+
+    let (body, content_type) = if file_path.exists() && file_path.is_file() {
+        let content =
+            std::fs::read(&file_path).map_err(|e| format!("File read error: {}", e))?;
+        let mime = mime_type(&clean_path);
         if mime.starts_with("text/html") {
-            let html = String::from_utf8_lossy(&content);
-            let modified = if html.contains("</body>") {
-                html.replace("</body>", &format!("{}</body>", RETURN_BUTTON_SCRIPT))
-            } else {
-                format!("{}{}", html, RETURN_BUTTON_SCRIPT)
-            };
-            (modified.into_bytes(), mime)
+            (inject_return_button(&content), mime)
         } else {
             (content, mime)
         }
     } else {
-        // SPA fallback: serve index.html for non-file paths
-        let index_path = version_dir.join("index.html");
-        if let Ok(mut f) = std::fs::File::open(&index_path) {
-            let mut content = Vec::new();
-            let _ = f.read_to_end(&mut content);
-            let html = String::from_utf8_lossy(&content);
-            let modified = if html.contains("</body>") {
-                html.replace("</body>", &format!("{}</body>", RETURN_BUTTON_SCRIPT))
-            } else {
-                format!("{}{}", html, RETURN_BUTTON_SCRIPT)
-            };
-            (modified.into_bytes(), "text/html; charset=utf-8")
+        // SPA fallback: serve index.html for unknown paths
+        let index = root.join("index.html");
+        if index.exists() {
+            let content =
+                std::fs::read(&index).map_err(|e| format!("Index read error: {}", e))?;
+            (inject_return_button(&content), "text/html; charset=utf-8")
         } else {
-            return tauri::http::Response::builder()
-                .status(404)
-                .header("Content-Type", "text/plain")
-                .body(format!("File not found: {}", path).into_bytes())
-                .unwrap();
+            return send_http_response(&mut stream, 404, "text/plain", b"Not Found");
         }
     };
 
-    tauri::http::Response::builder()
-        .status(200)
-        .header("Content-Type", content_type)
-        .header("Access-Control-Allow-Origin", "*")
-        .body(body)
-        .unwrap()
+    send_http_response(&mut stream, 200, content_type, &body)
+}
+
+fn inject_return_button(html_bytes: &[u8]) -> Vec<u8> {
+    let html = String::from_utf8_lossy(html_bytes);
+    let modified = if html.contains("</body>") {
+        html.replace("</body>", &format!("{}</body>", RETURN_BUTTON_SCRIPT))
+    } else {
+        format!("{}{}", html, RETURN_BUTTON_SCRIPT)
+    };
+    modified.into_bytes()
+}
+
+fn send_http_response(
+    stream: &mut std::net::TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+) -> Result<(), String> {
+    let status_text = match status {
+        200 => "OK",
+        400 => "Bad Request",
+        403 => "Forbidden",
+        404 => "Not Found",
+        _ => "Error",
+    };
+    let header = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+        status, status_text, content_type, body.len()
+    );
+    stream
+        .write_all(header.as_bytes())
+        .map_err(|e| format!("Write header: {}", e))?;
+    stream
+        .write_all(body)
+        .map_err(|e| format!("Write body: {}", e))?;
+    stream.flush().map_err(|e| format!("Flush: {}", e))?;
+    Ok(())
+}
+
+fn percent_decode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut bytes = s.bytes();
+    while let Some(b) = bytes.next() {
+        if b == b'%' {
+            let hi = bytes.next().and_then(|c| (c as char).to_digit(16));
+            let lo = bytes.next().and_then(|c| (c as char).to_digit(16));
+            if let (Some(h), Some(l)) = (hi, lo) {
+                result.push((h * 16 + l) as u8 as char);
+            } else {
+                result.push('%');
+            }
+        } else {
+            result.push(b as char);
+        }
+    }
+    result
 }
