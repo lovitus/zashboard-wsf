@@ -231,6 +231,7 @@ import {
   uiGetInfo,
   uiSetCustomUrls,
 } from '@/api/ui_manager'
+import { encodeStorageSnapshot } from '@/api/upstream_navigation'
 import { computed, onMounted, ref } from 'vue'
 
 const releases = ref<UpstreamRelease[]>([])
@@ -303,24 +304,9 @@ const handleActivate = async (tag: string) => {
   switching.value = true
   error.value = ''
   try {
-    // Capture all localStorage entries to transfer to the upstream UI origin
-    const storageEntries: Record<string, string> = {}
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key) {
-        const val = localStorage.getItem(key)
-        if (val !== null) storageEntries[key] = val
-      }
-    }
-    // Encode as base64(encodeURIComponent(JSON)) for safe injection into HTML <script>
-    const storageB64 = btoa(encodeURIComponent(JSON.stringify(storageEntries)))
-
-    const url = await uiActivateVersion(tag, storageB64)
+    const storageB64 = encodeStorageSnapshot()
+    await uiActivateVersion(tag, storageB64)
     await refreshInfo()
-    // Navigate to the upstream UI served on local HTTP server
-    if (url && url.startsWith('http')) {
-      window.location.href = url
-    }
   } catch (e) {
     error.value = String(e)
   } finally {

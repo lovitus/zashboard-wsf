@@ -173,6 +173,7 @@ import EditBackendModal from '@/components/settings/EditBackendModal.vue'
 import LanguageSelect from '@/components/settings/LanguageSelect.vue'
 import TunnelManager from '@/components/settings/TunnelManager.vue'
 import UpstreamUIManager from '@/components/settings/UpstreamUIManager.vue'
+import { openActiveUpstreamDashboardIfNeeded } from '@/api/upstream_navigation'
 import { ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
 import { getBackendFromUrl, getLabelFromBackend, getUrlFromBackend } from '@/helper/utils'
@@ -215,9 +216,12 @@ watch(
   { immediate: true },
 )
 
-const selectBackend = (uuid: string) => {
+const selectBackend = async (uuid: string) => {
   activeUuid.value = uuid
-  router.push({ name: ROUTE_NAME.proxies })
+  const redirected = await openActiveUpstreamDashboardIfNeeded()
+  if (!redirected) {
+    router.push({ name: ROUTE_NAME.proxies })
+  }
 }
 
 const editBackend = (backend: Backend) => {
@@ -269,7 +273,10 @@ const handleSubmit = async (form: Omit<Backend, 'uuid'>, quiet = false) => {
     }
 
     addBackend(form)
-    router.push({ name: ROUTE_NAME.proxies })
+    const redirected = await openActiveUpstreamDashboardIfNeeded()
+    if (!redirected) {
+      router.push({ name: ROUTE_NAME.proxies })
+    }
   } catch (e) {
     if (!quiet) {
       alert(e)

@@ -949,28 +949,6 @@ pub fn run() {
                     .build(app)?;
             }
 
-            // --- Auto-navigate to upstream UI if active ---
-            {
-                let upstream_url = {
-                    let ui_state_ref = app.state::<Mutex<ui_manager::UiManagerState>>();
-                    let s = ui_state_ref.lock().ok();
-                    s.and_then(|s| s.server_port.map(|p| format!("http://127.0.0.1:{}", p)))
-                };
-                if let Some(url) = upstream_url {
-                    let handle = app.handle().clone();
-                    tauri::async_runtime::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        if let Some(window) = handle.get_webview_window("main") {
-                            eprintln!("Auto-navigating to upstream UI: {}", url);
-                            let _ = window.eval(&format!(
-                                "window.location.href='{}'",
-                                url
-                            ));
-                        }
-                    });
-                }
-            }
-
             // --- Auto-start tunnels ---
             let state = app.state::<Mutex<TunnelState>>();
             let auto_start_configs: Vec<(String, String, Vec<String>)> = {
