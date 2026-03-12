@@ -37,3 +37,7 @@ The Android signing step in `release.yml` expects these repository secrets:
 - `ANDROID_KEYSTORE_ARCHIVE_PASSWORD`
 - `ANDROID_KEYSTORE_PASSWORD`
 - `ANDROID_KEY_ALIAS` (optional, defaults to `zashboard`)
+
+Notes:
+- The workflow first tries `ANDROID_KEYSTORE_ARCHIVE_PASSWORD` to decrypt `android_keystore_encrypted.zip`.
+- If that fails, it automatically retries with `ANDROID_KEYSTORE_PASSWORD` for compatibility.

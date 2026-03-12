@@ -300,8 +300,30 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          # Decrypt keystore from encrypted zip
-          7z x -p"$ANDROID_KEYSTORE_ARCHIVE_PASSWORD" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/
+          set -euo pipefail
+          mkdir -p /tmp/ks
+
+          # Decrypt keystore from encrypted zip.
+          # First try ANDROID_KEYSTORE_ARCHIVE_PASSWORD; if it fails, fall back to ANDROID_KEYSTORE_PASSWORD.
+          # This keeps compatibility when users encrypted the zip with the same keystore password.
+          rm -rf /tmp/ks/*
+          if ! 7z x -y -p"${ANDROID_KEYSTORE_ARCHIVE_PASSWORD:-}" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/ >/tmp/ks_unzip.log 2>&1; then
+            echo "Archive password failed, retrying with ANDROID_KEYSTORE_PASSWORD ..."
+            rm -rf /tmp/ks/*
+            if ! 7z x -y -p"${ANDROID_KEYSTORE_PASSWORD:-}" src-tauri/android_keystore_encrypted.zip -o/tmp/ks/ >/tmp/ks_unzip.log 2>&1; then
+              echo "ERROR: Failed to decrypt src-tauri/android_keystore_encrypted.zip"
+              echo "Check secret ANDROID_KEYSTORE_ARCHIVE_PASSWORD (or set it equal to ANDROID_KEYSTORE_PASSWORD)."
+              sed -n '1,120p' /tmp/ks_unzip.log || true
+              exit 2
+            fi
+          fi
+
+          KS_FILE="$(find /tmp/ks -name "*.keystore" | head -1)"
+          if [ -z "$KS_FILE" ]; then
+            echo "ERROR: keystore file not found after archive extraction."
+            exit 2
+          fi
+
           KEY_ALIAS="${ANDROID_KEY_ALIAS:-zashboard}"
 
           # Install build-tools for apksigner & zipalign
@@ -318,7 +340,7 @@ jobs:
 
           # Sign with apksigner
           "$BT/apksigner" sign \
-            --ks /tmp/ks/zashboard-release.keystore \
+            --ks "$KS_FILE" \
             --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
             --ks-key-alias "$KEY_ALIAS" \
             --key-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
