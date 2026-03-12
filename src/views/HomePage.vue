@@ -11,8 +11,8 @@
       >
         <button
           v-if="isMiddleScreen"
-          class="btn btn-primary btn-xs absolute left-2 z-40"
-          :style="{ top: `calc(8px + ${mobileSafeInset})` }"
+          class="btn btn-xs absolute left-2 z-40 border-base-300/60 bg-base-100/55 text-base-content shadow-sm backdrop-blur-md hover:bg-base-100/72"
+          :style="{ top: `calc(8px + ${mobileSafeInset})`, transform: 'translateY(50%)' }"
           @click.stop.prevent="goToSetupManager"
         >
           {{ $t('setup') }}
