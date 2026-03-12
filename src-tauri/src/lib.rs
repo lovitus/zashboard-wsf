@@ -807,10 +807,12 @@ async fn add_defender_exclusion(state: State<'_, Mutex<TunnelState>>) -> Result<
 #[cfg(desktop)]
 fn show_or_create_window(handle: &tauri::AppHandle) {
     if let Some(win) = handle.get_webview_window("main") {
+        win.unminimize().ok();
         win.show().ok();
         win.set_focus().ok();
+        restore_active_upstream_if_needed(handle, &win);
     } else {
-        let _ = WebviewWindowBuilder::new(
+        let created = WebviewWindowBuilder::new(
             handle,
             "main",
             WebviewUrl::App("index.html".into()),
@@ -819,7 +821,35 @@ fn show_or_create_window(handle: &tauri::AppHandle) {
         .inner_size(1200.0, 800.0)
         .min_inner_size(400.0, 600.0)
         .build();
+
+        if let Ok(win) = created {
+            restore_active_upstream_if_needed(handle, &win);
+        }
     }
+}
+
+#[cfg(desktop)]
+fn active_upstream_url(handle: &tauri::AppHandle) -> Option<String> {
+    let ui_state_ref = handle.state::<Mutex<ui_manager::UiManagerState>>();
+    let s = ui_state_ref.lock().ok()?;
+    s.server_port.map(|p| format!("http://127.0.0.1:{}", p))
+}
+
+#[cfg(desktop)]
+fn restore_active_upstream_if_needed(handle: &tauri::AppHandle, win: &tauri::WebviewWindow) {
+    let Some(url) = active_upstream_url(handle) else {
+        return;
+    };
+
+    let win = win.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        let js = format!(
+            "if (window.location.href !== '{0}') {{ window.location.href = '{0}'; }}",
+            url
+        );
+        let _ = win.eval(&js);
+    });
 }
 
 // --- App entry ---
@@ -862,11 +892,7 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.set_focus();
-                let _ = w.show();
-            }
+            show_or_create_window(app);
         }));
     }
 

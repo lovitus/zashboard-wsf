@@ -528,13 +528,78 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
   btn.onmouseenter=function(){btn.style.opacity='1'};
   btn.onmouseleave=function(){btn.style.opacity='0.85'};
   btn.onclick=function(){
-    // Navigate back to built-in Tauri UI (try both URL schemes)
-    window.location.href='https://tauri.localhost/';
-    setTimeout(function(){window.location.href='tauri://localhost/';},500);
+    function goBuiltin(){
+      // Prefer tauri:// first; https fallback is for environments where tauri:// is blocked.
+      window.location.href='tauri://localhost/';
+      setTimeout(function(){window.location.href='https://tauri.localhost/';},900);
+    }
+    try{
+      // Deactivate upstream state in backend before jumping back.
+      if(window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke==='function'){
+        window.__TAURI_INTERNALS__.invoke('ui_deactivate').finally(goBuiltin);
+        return;
+      }
+    }catch(e){}
+    goBuiltin();
   };
   document.body.appendChild(btn);
 })();
 </script>"#;
+
+const CORS_PROXY_PATCH_SCRIPT: &str = r#"<script>
+(function(){
+  if(window.__WSF_PROXY_PATCHED__) return;
+  window.__WSF_PROXY_PATCHED__=true;
+  var proxyPrefix='/__wsf_proxy?url=';
+  function toProxyUrl(input){
+    try{
+      if(typeof input!=='string') return input;
+      if(input.indexOf(proxyPrefix)===0) return input;
+      var u=new URL(input, window.location.href);
+      if(!/^https?:$/.test(u.protocol)) return input;
+      if(u.origin===window.location.origin) return u.toString();
+      return proxyPrefix + encodeURIComponent(u.toString());
+    }catch(_){
+      return input;
+    }
+  }
+
+  if(window.XMLHttpRequest && !window.__WSF_XHR_PATCHED__){
+    window.__WSF_XHR_PATCHED__=true;
+    var nativeOpen=XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open=function(method,url){
+      arguments[1]=toProxyUrl(String(url||''));
+      return nativeOpen.apply(this,arguments);
+    };
+  }
+
+  if(window.fetch && !window.__WSF_FETCH_PATCHED__){
+    window.__WSF_FETCH_PATCHED__=true;
+    var nativeFetch=window.fetch.bind(window);
+    window.fetch=function(input,init){
+      try{
+        if(typeof input==='string'){
+          return nativeFetch(toProxyUrl(input),init);
+        }
+        if(input && input.url){
+          var proxied=toProxyUrl(input.url);
+          if(proxied!==input.url){
+            return nativeFetch(new Request(proxied,input),init);
+          }
+        }
+      }catch(_){}
+      return nativeFetch(input,init);
+    };
+  }
+})();
+</script>"#;
+
+struct ParsedHttpRequest {
+    method: String,
+    raw_path: String,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+}
 
 fn start_file_server(root_dir: PathBuf, storage_data: Option<String>) -> Result<(u16, Arc<AtomicBool>), String> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
@@ -594,29 +659,27 @@ fn handle_http_request(
         .set_write_timeout(Some(Duration::from_secs(10)))
         .ok();
 
-    // Read request headers (up to 8KB)
-    let mut buf = [0u8; 8192];
-    let n = stream
-        .read(&mut buf)
-        .map_err(|e| format!("Read error: {}", e))?;
-    if n == 0 {
+    let req = read_http_request(&mut stream)?;
+    let path_and_query = req.raw_path.split('#').next().unwrap_or("/");
+    let (path, query) = split_path_query(path_and_query);
+
+    if path == "/__wsf_proxy" {
+        if let Err(e) = handle_proxy_request(&mut stream, &req, query.unwrap_or("")) {
+            let msg = format!("Bad Gateway: {}", e);
+            return send_http_response(&mut stream, 502, "text/plain", msg.as_bytes());
+        }
         return Ok(());
     }
 
-    let request = String::from_utf8_lossy(&buf[..n]);
-    let first_line = request.lines().next().unwrap_or("");
-
-    // Parse "GET /path HTTP/1.1"
-    let parts: Vec<&str> = first_line.split_whitespace().collect();
-    if parts.len() < 2 {
-        return send_http_response(&mut stream, 400, "text/plain", b"Bad Request");
+    if req.method != "GET" && req.method != "HEAD" {
+        return send_http_response(
+            &mut stream,
+            405,
+            "text/plain",
+            b"Method Not Allowed",
+        );
     }
 
-    let raw_path = parts[1];
-
-    // Parse path, strip query/hash
-    let path = raw_path.split('?').next().unwrap_or("/");
-    let path = path.split('#').next().unwrap_or("/");
     let decoded = percent_decode(path);
     let clean_path = if decoded.is_empty() || decoded == "/" {
         "index.html".to_string()
@@ -652,30 +715,200 @@ fn handle_http_request(
         }
     };
 
-    send_http_response(&mut stream, 200, content_type, &body)
+    if req.method == "HEAD" {
+        send_http_response(&mut stream, 200, content_type, &[])
+    } else {
+        send_http_response(&mut stream, 200, content_type, &body)
+    }
+}
+
+fn read_http_request(stream: &mut std::net::TcpStream) -> Result<ParsedHttpRequest, String> {
+    let mut data = Vec::with_capacity(8192);
+    let mut buf = [0u8; 4096];
+    let header_end = loop {
+        let n = stream
+            .read(&mut buf)
+            .map_err(|e| format!("Read error: {}", e))?;
+        if n == 0 {
+            if data.is_empty() {
+                return Err("Empty request".to_string());
+            }
+            return Err("Unexpected EOF while reading headers".to_string());
+        }
+        data.extend_from_slice(&buf[..n]);
+        if data.len() > 1024 * 1024 {
+            return Err("Request header too large".to_string());
+        }
+        if let Some(pos) = find_bytes(&data, b"\r\n\r\n") {
+            break pos + 4;
+        }
+    };
+
+    let header_text = String::from_utf8_lossy(&data[..header_end]);
+    let mut lines = header_text.split("\r\n");
+
+    let request_line = lines.next().unwrap_or("");
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return Err("Invalid request line".to_string());
+    }
+
+    let mut headers = Vec::new();
+    let mut content_length = 0usize;
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            let name = name.trim().to_string();
+            let value = value.trim().to_string();
+            if name.eq_ignore_ascii_case("content-length") {
+                content_length = value.parse::<usize>().unwrap_or(0);
+            }
+            headers.push((name, value));
+        }
+    }
+
+    let mut body = data[header_end..].to_vec();
+    while body.len() < content_length {
+        let n = stream
+            .read(&mut buf)
+            .map_err(|e| format!("Read body error: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        body.extend_from_slice(&buf[..n]);
+        if body.len() > 16 * 1024 * 1024 {
+            return Err("Request body too large".to_string());
+        }
+    }
+
+    if body.len() < content_length {
+        return Err("Request body truncated".to_string());
+    }
+    if body.len() > content_length {
+        body.truncate(content_length);
+    }
+
+    Ok(ParsedHttpRequest {
+        method: parts[0].to_string(),
+        raw_path: parts[1].to_string(),
+        headers,
+        body,
+    })
+}
+
+fn split_path_query(path: &str) -> (&str, Option<&str>) {
+    if let Some((p, q)) = path.split_once('?') {
+        (p, Some(q))
+    } else {
+        (path, None)
+    }
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return None;
+    }
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn query_param(query: &str, key: &str) -> Option<String> {
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == key {
+                return Some(v.to_string());
+            }
+        } else if pair == key {
+            return Some(String::new());
+        }
+    }
+    None
+}
+
+fn handle_proxy_request(
+    stream: &mut std::net::TcpStream,
+    req: &ParsedHttpRequest,
+    query: &str,
+) -> Result<(), String> {
+    let encoded_url = query_param(query, "url").ok_or_else(|| "Missing url".to_string())?;
+    let target_url = percent_decode(&encoded_url);
+    if !target_url.starts_with("http://") && !target_url.starts_with("https://") {
+        return Err("Only http/https proxy targets are allowed".to_string());
+    }
+
+    let method = reqwest::Method::from_bytes(req.method.as_bytes())
+        .map_err(|e| format!("Invalid method: {}", e))?;
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("Proxy HTTP client error: {}", e))?;
+
+    let mut request_builder = client.request(method, &target_url);
+    for (name, value) in &req.headers {
+        let lower = name.to_ascii_lowercase();
+        if matches!(
+            lower.as_str(),
+            "host" | "content-length" | "connection" | "origin" | "referer" | "accept-encoding"
+        ) {
+            continue;
+        }
+        request_builder = request_builder.header(name, value);
+    }
+    if !req.body.is_empty() {
+        request_builder = request_builder.body(req.body.clone());
+    }
+
+    let response = request_builder
+        .send()
+        .map_err(|e| format!("Proxy request failed: {}", e))?;
+
+    let status = response.status().as_u16();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+
+    if req.method == "HEAD" {
+        return send_http_response(stream, status, &content_type, &[]);
+    }
+
+    let body = response
+        .bytes()
+        .map_err(|e| format!("Proxy read body failed: {}", e))?;
+    send_http_response(stream, status, &content_type, body.as_ref())
 }
 
 fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>) -> Vec<u8> {
     let html = String::from_utf8_lossy(html_bytes);
     let mut result = html.to_string();
 
-    // 1. Inject localStorage restoration script right after <head> (before SPA scripts)
-    // The storage_b64 is base64(encodeURIComponent(JSON)) from the frontend
+    // Inject scripts right after <head> so they run before SPA bundles.
+    let mut head_scripts = String::new();
+    head_scripts.push_str(CORS_PROXY_PATCH_SCRIPT);
+
     if let Some(data) = storage_b64 {
         let storage_script = format!(
             "<script>(function(){{try{{var d=JSON.parse(decodeURIComponent(atob('{}')));for(var k in d){{if(d.hasOwnProperty(k))localStorage.setItem(k,d[k]);}}}}catch(e){{console.error('WSF storage restore:',e)}}}})()</script>",
             data
         );
-        if let Some(pos) = result.find("<head>") {
-            result.insert_str(pos + 6, &storage_script);
-        } else if let Some(pos) = result.find("<HEAD>") {
-            result.insert_str(pos + 6, &storage_script);
-        } else {
-            result = format!("{}{}", storage_script, result);
-        }
+        head_scripts.push_str(&storage_script);
     }
 
-    // 2. Inject return button before </body>
+    if let Some(pos) = result.find("<head>") {
+        result.insert_str(pos + 6, &head_scripts);
+    } else if let Some(pos) = result.find("<HEAD>") {
+        result.insert_str(pos + 6, &head_scripts);
+    } else {
+        result = format!("{}{}", head_scripts, result);
+    }
+
+    // Inject return button before </body>.
     if result.contains("</body>") {
         result = result.replace("</body>", &format!("{}\n</body>", RETURN_BUTTON_SCRIPT));
     } else {
@@ -696,6 +929,8 @@ fn send_http_response(
         400 => "Bad Request",
         403 => "Forbidden",
         404 => "Not Found",
+        405 => "Method Not Allowed",
+        502 => "Bad Gateway",
         _ => "Error",
     };
     let header = format!(
@@ -713,20 +948,31 @@ fn send_http_response(
 }
 
 fn percent_decode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut bytes = s.bytes();
-    while let Some(b) = bytes.next() {
-        if b == b'%' {
-            let hi = bytes.next().and_then(|c| (c as char).to_digit(16));
-            let lo = bytes.next().and_then(|c| (c as char).to_digit(16));
-            if let (Some(h), Some(l)) = (hi, lo) {
-                result.push((h * 16 + l) as u8 as char);
-            } else {
-                result.push('%');
+    let input = s.as_bytes();
+    let mut out = Vec::with_capacity(input.len());
+    let mut i = 0usize;
+    while i < input.len() {
+        match input[i] {
+            b'%' if i + 2 < input.len() => {
+                let hi = (input[i + 1] as char).to_digit(16);
+                let lo = (input[i + 2] as char).to_digit(16);
+                if let (Some(h), Some(l)) = (hi, lo) {
+                    out.push((h * 16 + l) as u8);
+                    i += 3;
+                    continue;
+                }
+                out.push(input[i]);
+                i += 1;
             }
-        } else {
-            result.push(b as char);
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            ch => {
+                out.push(ch);
+                i += 1;
+            }
         }
     }
-    result
+    String::from_utf8_lossy(&out).to_string()
 }
