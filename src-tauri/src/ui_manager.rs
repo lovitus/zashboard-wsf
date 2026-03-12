@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
+#[cfg(desktop)]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri::{Manager, State};
 
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
@@ -531,17 +533,19 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
   btn.style.cssText='position:fixed;bottom:16px;right:16px;z-index:99999;background:#3b82f6;color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.85;transition:opacity .2s';
   btn.onmouseenter=function(){btn.style.opacity='1'};
   btn.onmouseleave=function(){btn.style.opacity='0.85'};
-  function goBuiltin(){
-    try{window.history.back();}catch(e){}
-    setTimeout(function(){
-      window.location.href='tauri://localhost/';
-      setTimeout(function(){window.location.href='https://tauri.localhost/';},900);
-    },250);
-  }
   btn.onclick=function(){
+    btn.style.pointerEvents='none';
+    btn.style.opacity='0.65';
+    btn.innerHTML='Switching...';
     fetch('/__wsf_builtin', { method: 'POST', cache: 'no-store' })
       .catch(function(){})
-      .finally(goBuiltin);
+      .finally(function(){
+        // If backend-side navigation fails unexpectedly, keep a local fallback.
+        setTimeout(function(){
+          window.location.href='tauri://localhost/';
+          setTimeout(function(){window.location.href='https://tauri.localhost/';},1200);
+        }, 1200);
+      });
   };
   document.body.appendChild(btn);
 })();
@@ -607,13 +611,46 @@ pub fn set_app_handle(handle: tauri::AppHandle) {
 }
 
 fn navigate_main_to_builtin() {
-    if let Some(handle) = APP_HANDLE.get() {
-        if let Some(window) = handle.get_webview_window("main") {
-            let _ = window.eval(
-                "window.location.href='tauri://localhost/';setTimeout(function(){window.location.href='https://tauri.localhost/';},900);",
-            );
+    let Some(handle) = APP_HANDLE.get().cloned() else {
+        return;
+    };
+
+    let _ = handle.clone().run_on_main_thread(move || {
+        #[cfg(desktop)]
+        {
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.close();
+            }
+
+            let created = WebviewWindowBuilder::new(
+                &handle,
+                "main",
+                WebviewUrl::App("index.html".into()),
+            )
+            .title("Zashboard - Mihomo Dashboard")
+            .inner_size(1200.0, 800.0)
+            .min_inner_size(400.0, 600.0)
+            .build();
+
+            if let Ok(window) = created {
+                let _ = window.show();
+                let _ = window.set_focus();
+            } else if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.eval(
+                    "window.location.href='tauri://localhost/';setTimeout(function(){window.location.href='https://tauri.localhost/';},900);",
+                );
+            }
         }
-    }
+
+        #[cfg(not(desktop))]
+        {
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.eval(
+                    "window.location.href='tauri://localhost/';setTimeout(function(){window.location.href='https://tauri.localhost/';},900);",
+                );
+            }
+        }
+    });
 }
 
 fn start_file_server(

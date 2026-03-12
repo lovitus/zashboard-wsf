@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
+import { isTauri } from './api/tunnel'
 import { useKeyboard } from './composables/keyboard'
 import { EMOJIS, FONTS } from './constant'
 import { autoImportSettings, importSettingsFromUrl } from './helper/autoImportSettings'
@@ -123,6 +124,17 @@ const blurClass = computed(() => {
   return `blur-intensity-${blurIntensity.value}`
 })
 
+const isAndroidApp = isTauri && /Android/i.test(navigator.userAgent)
+
+const appStyle = computed(() => {
+  const base = backgroundImage.value || ''
+  if (!isAndroidApp) {
+    return base
+  }
+  // Keep fixed top/bottom space on Android to avoid status/navigation bar overlap.
+  return `${base};padding-top:16px;padding-bottom:16px;box-sizing:border-box;`
+})
+
 useKeyboard()
 </script>
 
@@ -137,7 +149,7 @@ useKeyboard()
         `custom-background-${dashboardTransparent} custom-background bg-cover bg-center`,
       blurClass,
     ]"
-    :style="backgroundImage"
+    :style="appStyle"
   >
     <RouterView />
     <div

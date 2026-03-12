@@ -9,6 +9,15 @@
         class="relative flex-1 overflow-hidden"
         ref="swiperRef"
       >
+        <button
+          v-if="isMiddleScreen"
+          class="btn btn-primary btn-xs absolute left-2 z-40"
+          :style="{ top: 'calc(8px + env(safe-area-inset-top))' }"
+          @click="router.push({ name: ROUTE_NAME.setup })"
+        >
+          {{ $t('setup') }}
+        </button>
+
         <div class="absolute flex h-full w-full flex-col overflow-y-auto">
           <Transition
             :name="(route.meta.transition as string) || 'fade'"
