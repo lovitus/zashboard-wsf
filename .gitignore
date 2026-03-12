@@ -37,3 +37,5 @@ src-tauri/embed/
 # Keystore (unencrypted)
 *.keystore
 *.jks
+Fix Upstream UI and Android CI.md
+UPSTREAM_UI_ISSUE.md

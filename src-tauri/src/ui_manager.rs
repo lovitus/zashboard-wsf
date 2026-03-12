@@ -34,6 +34,7 @@ pub struct UiManagerState {
     pub custom_download_base: Option<String>,
     pub server_port: Option<u16>,
     pub server_shutdown: Option<Arc<AtomicBool>>,
+    pub storage_data: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,6 +55,7 @@ pub struct DownloadedVersion {
 const ACTIVE_VERSION_FILE: &str = "ui_active_version.txt";
 const CUSTOM_RELEASES_URL_FILE: &str = "ui_custom_releases_url.txt";
 const CUSTOM_DOWNLOAD_BASE_FILE: &str = "ui_custom_download_base.txt";
+const STORAGE_DATA_FILE: &str = "ui_storage_data.txt";
 const DEFAULT_RELEASES_URL: &str = "https://api.github.com/repos/Zephyruso/zashboard/releases";
 const DEFAULT_DOWNLOAD_BASE: &str = "https://github.com/Zephyruso/zashboard/releases/download";
 const HTTP_TIMEOUT_SECS: u64 = 30;
@@ -96,6 +98,18 @@ fn write_custom_url(base_dir: &PathBuf, filename: &str, url: Option<&str>) {
     }
 }
 
+fn read_storage_data(base_dir: &PathBuf) -> Option<String> {
+    read_trimmed_file(&base_dir.join(STORAGE_DATA_FILE))
+}
+
+fn write_storage_data(base_dir: &PathBuf, data: Option<&str>) {
+    let path = base_dir.join(STORAGE_DATA_FILE);
+    match data {
+        Some(d) if !d.is_empty() => { let _ = std::fs::write(&path, d); }
+        _ => { let _ = std::fs::remove_file(&path); }
+    }
+}
+
 fn dir_size(path: &PathBuf) -> u64 {
     let mut total = 0u64;
     if let Ok(entries) = std::fs::read_dir(path) {
@@ -132,12 +146,13 @@ pub fn init_state() -> UiManagerState {
     let active_version = read_active_version(&base_dir);
     let custom_releases_url = read_custom_url(&base_dir, CUSTOM_RELEASES_URL_FILE);
     let custom_download_base = read_custom_url(&base_dir, CUSTOM_DOWNLOAD_BASE_FILE);
+    let storage_data = read_storage_data(&base_dir);
 
     // If a version was previously active, start the file server
     let (server_port, server_shutdown) = if let Some(ref ver) = active_version {
         let version_dir = base_dir.join(ver);
         if version_dir.join("index.html").exists() {
-            match start_file_server(version_dir) {
+            match start_file_server(version_dir, storage_data.clone()) {
                 Ok((port, shutdown)) => {
                     eprintln!("Resumed file server for {} on port {}", ver, port);
                     (Some(port), Some(shutdown))
@@ -169,6 +184,7 @@ pub fn init_state() -> UiManagerState {
         custom_download_base,
         server_port,
         server_shutdown,
+        storage_data,
     }
 }
 
@@ -351,6 +367,7 @@ fn extract_zip(bytes: &[u8], version_dir: &PathBuf) -> Result<(), String> {
 pub async fn ui_activate_version(
     state: State<'_, Mutex<UiManagerState>>,
     tag: String,
+    storage_data: Option<String>,
 ) -> Result<String, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
     let version_dir = s.base_dir.join(&tag);
@@ -364,12 +381,16 @@ pub async fn ui_activate_version(
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    // Start new file server for this version
-    let (port, shutdown) = start_file_server(version_dir)?;
+    // Persist storage data for restart recovery
+    write_storage_data(&s.base_dir, storage_data.as_deref());
+
+    // Start new file server for this version with storage data
+    let (port, shutdown) = start_file_server(version_dir, storage_data.clone())?;
 
     s.active_version = Some(tag.clone());
     s.server_port = Some(port);
     s.server_shutdown = Some(shutdown);
+    s.storage_data = storage_data;
     write_active_version(&s.base_dir, Some(&tag));
 
     let url = format!("http://127.0.0.1:{}", port);
@@ -391,7 +412,9 @@ pub async fn ui_deactivate(
     s.active_version = None;
     s.server_port = None;
     s.server_shutdown = None;
+    s.storage_data = None;
     write_active_version(&s.base_dir, None);
+    write_storage_data(&s.base_dir, None);
 
     eprintln!("Deactivated upstream UI, switched to built-in");
     Ok("Switched to built-in UI".to_string())
@@ -513,7 +536,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 })();
 </script>"#;
 
-fn start_file_server(root_dir: PathBuf) -> Result<(u16, Arc<AtomicBool>), String> {
+fn start_file_server(root_dir: PathBuf, storage_data: Option<String>) -> Result<(u16, Arc<AtomicBool>), String> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
         .map_err(|e| format!("Failed to bind HTTP server: {}", e))?;
     let port = listener
@@ -537,8 +560,9 @@ fn start_file_server(root_dir: PathBuf) -> Result<(u16, Arc<AtomicBool>), String
             match listener.accept() {
                 Ok((stream, _)) => {
                     let root = root_dir.clone();
+                    let sd = storage_data.clone();
                     std::thread::spawn(move || {
-                        if let Err(e) = handle_http_request(stream, &root) {
+                        if let Err(e) = handle_http_request(stream, &root, sd.as_deref()) {
                             eprintln!("HTTP handler error: {}", e);
                         }
                     });
@@ -563,6 +587,7 @@ fn start_file_server(root_dir: PathBuf) -> Result<(u16, Arc<AtomicBool>), String
 fn handle_http_request(
     mut stream: std::net::TcpStream,
     root: &std::path::Path,
+    storage_data: Option<&str>,
 ) -> Result<(), String> {
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
     stream
@@ -611,7 +636,7 @@ fn handle_http_request(
             std::fs::read(&file_path).map_err(|e| format!("File read error: {}", e))?;
         let mime = mime_type(&clean_path);
         if mime.starts_with("text/html") {
-            (inject_return_button(&content), mime)
+            (inject_scripts(&content, storage_data), mime)
         } else {
             (content, mime)
         }
@@ -621,7 +646,7 @@ fn handle_http_request(
         if index.exists() {
             let content =
                 std::fs::read(&index).map_err(|e| format!("Index read error: {}", e))?;
-            (inject_return_button(&content), "text/html; charset=utf-8")
+            (inject_scripts(&content, storage_data), "text/html; charset=utf-8")
         } else {
             return send_http_response(&mut stream, 404, "text/plain", b"Not Found");
         }
@@ -630,14 +655,34 @@ fn handle_http_request(
     send_http_response(&mut stream, 200, content_type, &body)
 }
 
-fn inject_return_button(html_bytes: &[u8]) -> Vec<u8> {
+fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>) -> Vec<u8> {
     let html = String::from_utf8_lossy(html_bytes);
-    let modified = if html.contains("</body>") {
-        html.replace("</body>", &format!("{}</body>", RETURN_BUTTON_SCRIPT))
+    let mut result = html.to_string();
+
+    // 1. Inject localStorage restoration script right after <head> (before SPA scripts)
+    // The storage_b64 is base64(encodeURIComponent(JSON)) from the frontend
+    if let Some(data) = storage_b64 {
+        let storage_script = format!(
+            "<script>(function(){{try{{var d=JSON.parse(decodeURIComponent(atob('{}')));for(var k in d){{if(d.hasOwnProperty(k))localStorage.setItem(k,d[k]);}}}}catch(e){{console.error('WSF storage restore:',e)}}}})()</script>",
+            data
+        );
+        if let Some(pos) = result.find("<head>") {
+            result.insert_str(pos + 6, &storage_script);
+        } else if let Some(pos) = result.find("<HEAD>") {
+            result.insert_str(pos + 6, &storage_script);
+        } else {
+            result = format!("{}{}", storage_script, result);
+        }
+    }
+
+    // 2. Inject return button before </body>
+    if result.contains("</body>") {
+        result = result.replace("</body>", &format!("{}\n</body>", RETURN_BUTTON_SCRIPT));
     } else {
-        format!("{}{}", html, RETURN_BUTTON_SCRIPT)
-    };
-    modified.into_bytes()
+        result.push_str(RETURN_BUTTON_SCRIPT);
+    }
+
+    result.into_bytes()
 }
 
 fn send_http_response(

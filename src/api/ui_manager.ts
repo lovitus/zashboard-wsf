@@ -35,8 +35,8 @@ export async function uiDownloadVersion(tag: string): Promise<string> {
   return invoke<string>('ui_download_version', { tag })
 }
 
-export async function uiActivateVersion(tag: string): Promise<string> {
-  return invoke<string>('ui_activate_version', { tag })
+export async function uiActivateVersion(tag: string, storageData?: string | null): Promise<string> {
+  return invoke<string>('ui_activate_version', { tag, storageData: storageData || null })
 }
 
 export async function uiDeactivate(): Promise<string> {
