@@ -18,6 +18,24 @@ jobs:
       contents: write
     strategy:
       fail-fast: false
+      # ------------------------------------------------------------------
+      # CI TARGET POLICY (CURRENT PHASE)
+      # Enabled release targets:
+      # 1) Windows x64 (x86_64-pc-windows-msvc)
+      # 2) Windows x86 (i686-pc-windows-msvc)
+      # 3) macOS Apple Silicon (aarch64-apple-darwin)
+      # 4) Android (separate build-android job below)
+      #
+      # Temporarily disabled targets:
+      # - macOS Intel (x86_64-apple-darwin)
+      # - Linux (all variants)
+      # - iOS / other architectures
+      #
+      # Re-enable process:
+      # - Uncomment the corresponding matrix items below
+      # - Verify sidecar suffix availability in lovitus/gust and lovitus/slider
+      # - Run one tagged release to validate packaging/signing
+      # ------------------------------------------------------------------
       matrix:
         include:
           - platform: windows-latest
