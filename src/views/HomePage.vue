@@ -12,7 +12,7 @@
         <button
           v-if="isMiddleScreen"
           class="btn btn-primary btn-xs absolute left-2 z-40"
-          :style="{ top: 'calc(8px + env(safe-area-inset-top))' }"
+          :style="{ top: `calc(8px + ${mobileSafeInset})` }"
           @click.stop.prevent="goToSetupManager"
         >
           {{ $t('setup') }}
@@ -36,7 +36,7 @@
             class="bg-base-100/20 dock dock-xs z-10 h-14 w-auto shadow-sm backdrop-blur-sm"
             :style="{
               padding: '0',
-              bottom: 'calc(var(--spacing) * 2 + env(safe-area-inset-bottom))',
+              bottom: `calc(var(--spacing) * 2 + ${mobileSafeInset})`,
             }"
             ref="dockRef"
           >
@@ -109,6 +109,7 @@ import { RouterView, useRouter } from 'vue-router'
 
 const router = useRouter()
 const { swiperRef } = useSwipeRouter()
+const mobileSafeInset = 'max(env(safe-area-inset-top), env(safe-area-inset-bottom))'
 
 const dockRef = ref<HTMLDivElement>()
 const { top: dockRefTop } = useElementBounding(dockRef)
