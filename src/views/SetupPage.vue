@@ -91,6 +91,11 @@
           v-model="backendList"
           group="list"
           :animation="150"
+          handle=".backend-drag-handle"
+          :delay="isMiddleScreen ? 180 : 0"
+          :delay-on-touch-only="true"
+          :touch-start-threshold="6"
+          :fallback-tolerance="8"
           :item-key="'uuid'"
         >
           <template #item="{ element }">
@@ -98,23 +103,23 @@
               :key="element.uuid"
               class="flex items-center gap-2"
             >
-              <button class="btn btn-circle btn-ghost btn-sm">
+              <button class="backend-drag-handle btn btn-circle btn-ghost btn-sm">
                 <ChevronUpDownIcon class="h-4 w-4 cursor-grab" />
               </button>
               <button
-                class="btn btn-sm flex-1"
+                class="backend-action btn btn-sm flex-1"
                 @click="selectBackend(element.uuid)"
               >
                 {{ getLabelFromBackend(element) }}
               </button>
               <button
-                class="btn btn-circle btn-ghost btn-sm"
+                class="backend-action btn btn-circle btn-ghost btn-sm"
                 @click="editBackend(element)"
               >
                 <PencilIcon class="h-4 w-4" />
               </button>
               <button
-                class="btn btn-circle btn-ghost btn-sm"
+                class="backend-action btn btn-circle btn-ghost btn-sm"
                 @click="() => removeBackend(element.uuid)"
               >
                 <TrashIcon class="h-4 w-4" />
@@ -176,7 +181,7 @@ import UpstreamUIManager from '@/components/settings/UpstreamUIManager.vue'
 import { openActiveUpstreamDashboardIfNeeded } from '@/api/upstream_navigation'
 import { ROUTE_NAME } from '@/constant'
 import { showNotification } from '@/helper/notification'
-import { getBackendFromUrl, getLabelFromBackend, getUrlFromBackend } from '@/helper/utils'
+import { getBackendFromUrl, getLabelFromBackend, getUrlFromBackend, isMiddleScreen } from '@/helper/utils'
 import router from '@/router'
 import { activeUuid, addBackend, backendList, removeBackend } from '@/store/setup'
 import type { Backend } from '@/types'
@@ -292,3 +297,13 @@ if (backend) {
   handleSubmit(form, true)
 }
 </script>
+
+<style scoped>
+.backend-action {
+  touch-action: manipulation;
+}
+
+.backend-drag-handle {
+  touch-action: none;
+}
+</style>

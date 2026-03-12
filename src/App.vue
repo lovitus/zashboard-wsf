@@ -124,16 +124,8 @@ const blurClass = computed(() => {
   return `blur-intensity-${blurIntensity.value}`
 })
 
-const isAndroidApp = isTauri && /Android/i.test(navigator.userAgent)
-
 const appStyle = computed(() => {
-  const base = backgroundImage.value || ''
-  if (!isAndroidApp) {
-    return base
-  }
-  // Keep large fixed top/bottom space on Android to avoid status/navigation bar overlap.
-  // User requested significantly larger spacing.
-  return `${base};padding-top:calc(env(safe-area-inset-top) + 56px);padding-bottom:calc(env(safe-area-inset-bottom) + 56px);box-sizing:border-box;`
+  return backgroundImage.value || ''
 })
 
 useKeyboard()

@@ -348,6 +348,7 @@ div {
       var(--color-base-100),
       color-mix(in srgb, var(--color-base-100) 10%, transparent)
     );
+    padding-top: env(safe-area-inset-top);
   }
   @apply md:bg-base-100/20 fixed top-0 right-0 left-0 z-30 shadow-sm backdrop-blur-lg md:sticky;
 }
