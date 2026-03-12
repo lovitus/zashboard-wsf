@@ -832,6 +832,12 @@ fn show_or_create_window(handle: &tauri::AppHandle) {
 fn active_upstream_url(handle: &tauri::AppHandle) -> Option<String> {
     let ui_state_ref = handle.state::<Mutex<ui_manager::UiManagerState>>();
     let s = ui_state_ref.lock().ok()?;
+    let marker = s.base_dir.join("ui_active_version.txt");
+    let persisted = std::fs::read_to_string(marker).ok().unwrap_or_default();
+    let persisted = persisted.trim();
+    if persisted.is_empty() || persisted.eq_ignore_ascii_case("builtin") {
+        return None;
+    }
     s.server_port.map(|p| format!("http://127.0.0.1:{}", p))
 }
 
@@ -919,6 +925,8 @@ pub fn run() {
             ui_manager::ui_set_custom_urls,
         ])
         .setup(move |app| {
+            ui_manager::set_app_handle(app.handle().clone());
+
             // --- Mobile: fix config path using Tauri's app data dir ---
             #[cfg(mobile)]
             {

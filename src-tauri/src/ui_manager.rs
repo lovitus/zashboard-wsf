@@ -2,9 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
-use tauri::State;
+use tauri::{Manager, State};
+
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamRelease {
@@ -152,7 +154,7 @@ pub fn init_state() -> UiManagerState {
     let (server_port, server_shutdown) = if let Some(ref ver) = active_version {
         let version_dir = base_dir.join(ver);
         if version_dir.join("index.html").exists() {
-            match start_file_server(version_dir, storage_data.clone()) {
+            match start_file_server(version_dir, storage_data.clone(), base_dir.clone()) {
                 Ok((port, shutdown)) => {
                     eprintln!("Resumed file server for {} on port {}", ver, port);
                     (Some(port), Some(shutdown))
@@ -385,7 +387,8 @@ pub async fn ui_activate_version(
     write_storage_data(&s.base_dir, storage_data.as_deref());
 
     // Start new file server for this version with storage data
-    let (port, shutdown) = start_file_server(version_dir, storage_data.clone())?;
+    let (port, shutdown) =
+        start_file_server(version_dir, storage_data.clone(), s.base_dir.clone())?;
 
     s.active_version = Some(tag.clone());
     s.server_port = Some(port);
@@ -424,7 +427,8 @@ pub async fn ui_deactivate(
 pub async fn ui_get_info(
     state: State<'_, Mutex<UiManagerState>>,
 ) -> Result<UiVersionInfo, String> {
-    let s = state.lock().map_err(|e| e.to_string())?;
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+    sync_state_with_disk(&mut s);
     let mut downloaded = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(&s.base_dir) {
@@ -527,20 +531,17 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
   btn.style.cssText='position:fixed;bottom:16px;right:16px;z-index:99999;background:#3b82f6;color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.85;transition:opacity .2s';
   btn.onmouseenter=function(){btn.style.opacity='1'};
   btn.onmouseleave=function(){btn.style.opacity='0.85'};
-  btn.onclick=function(){
-    function goBuiltin(){
-      // Prefer tauri:// first; https fallback is for environments where tauri:// is blocked.
+  function goBuiltin(){
+    try{window.history.back();}catch(e){}
+    setTimeout(function(){
       window.location.href='tauri://localhost/';
       setTimeout(function(){window.location.href='https://tauri.localhost/';},900);
-    }
-    try{
-      // Deactivate upstream state in backend before jumping back.
-      if(window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke==='function'){
-        window.__TAURI_INTERNALS__.invoke('ui_deactivate').finally(goBuiltin);
-        return;
-      }
-    }catch(e){}
-    goBuiltin();
+    },250);
+  }
+  btn.onclick=function(){
+    fetch('/__wsf_builtin', { method: 'POST', cache: 'no-store' })
+      .catch(function(){})
+      .finally(goBuiltin);
   };
   document.body.appendChild(btn);
 })();
@@ -601,7 +602,25 @@ struct ParsedHttpRequest {
     body: Vec<u8>,
 }
 
-fn start_file_server(root_dir: PathBuf, storage_data: Option<String>) -> Result<(u16, Arc<AtomicBool>), String> {
+pub fn set_app_handle(handle: tauri::AppHandle) {
+    let _ = APP_HANDLE.set(handle);
+}
+
+fn navigate_main_to_builtin() {
+    if let Some(handle) = APP_HANDLE.get() {
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.eval(
+                "window.location.href='tauri://localhost/';setTimeout(function(){window.location.href='https://tauri.localhost/';},900);",
+            );
+        }
+    }
+}
+
+fn start_file_server(
+    root_dir: PathBuf,
+    storage_data: Option<String>,
+    base_dir: PathBuf,
+) -> Result<(u16, Arc<AtomicBool>), String> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
         .map_err(|e| format!("Failed to bind HTTP server: {}", e))?;
     let port = listener
@@ -626,8 +645,12 @@ fn start_file_server(root_dir: PathBuf, storage_data: Option<String>) -> Result<
                 Ok((stream, _)) => {
                     let root = root_dir.clone();
                     let sd = storage_data.clone();
+                    let base = base_dir.clone();
+                    let req_shutdown = shutdown_flag.clone();
                     std::thread::spawn(move || {
-                        if let Err(e) = handle_http_request(stream, &root, sd.as_deref()) {
+                        if let Err(e) =
+                            handle_http_request(stream, &root, sd.as_deref(), &base, &req_shutdown)
+                        {
                             eprintln!("HTTP handler error: {}", e);
                         }
                     });
@@ -653,6 +676,8 @@ fn handle_http_request(
     mut stream: std::net::TcpStream,
     root: &std::path::Path,
     storage_data: Option<&str>,
+    base_dir: &PathBuf,
+    shutdown: &Arc<AtomicBool>,
 ) -> Result<(), String> {
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
     stream
@@ -662,6 +687,14 @@ fn handle_http_request(
     let req = read_http_request(&mut stream)?;
     let path_and_query = req.raw_path.split('#').next().unwrap_or("/");
     let (path, query) = split_path_query(path_and_query);
+
+    if path == "/__wsf_builtin" {
+        write_active_version(base_dir, None);
+        write_storage_data(base_dir, None);
+        shutdown.store(true, Ordering::Relaxed);
+        navigate_main_to_builtin();
+        return send_http_response(&mut stream, 200, "text/plain", b"ok");
+    }
 
     if path == "/__wsf_proxy" {
         if let Err(e) = handle_proxy_request(&mut stream, &req, query.unwrap_or("")) {
@@ -916,6 +949,19 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>) -> Vec<u8> {
     }
 
     result.into_bytes()
+}
+
+fn sync_state_with_disk(s: &mut UiManagerState) {
+    let disk_active = read_active_version(&s.base_dir);
+    if disk_active.is_none() && s.active_version.is_some() {
+        if let Some(ref shutdown) = s.server_shutdown {
+            shutdown.store(true, Ordering::Relaxed);
+        }
+        s.active_version = None;
+        s.server_port = None;
+        s.server_shutdown = None;
+        s.storage_data = None;
+    }
 }
 
 fn send_http_response(
