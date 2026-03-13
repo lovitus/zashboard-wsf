@@ -542,17 +542,24 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 
   function inject(){
     try{
-      if(document.getElementById('__wsf_builtin_btn')) return;
+      if(!document.body || document.getElementById('__wsf_builtin_btn')) return;
 
-      var btn=document.createElement('a');
+      var btn=document.createElement('button');
       btn.id='__wsf_builtin_btn';
-      btn.href='/__wsf_builtin?from=btn';
+      btn.type='button';
       btn.textContent='\u21A9 Built-in UI';
-      btn.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom), 16px) + 20px);z-index:2147483647;background:rgba(59,130,246,.88);color:#fff;padding:7px 12px;border-radius:999px;text-decoration:none;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);white-space:nowrap;max-width:45vw;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(2px);';
+      btn.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom), 16px) + 18px);z-index:2147483647;background:rgba(59,130,246,.85);color:#fff;padding:7px 12px;border-radius:8px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.9;transition:opacity .2s;white-space:nowrap;max-width:45vw;overflow:hidden;text-overflow:ellipsis;';
+      btn.onmouseenter=function(){btn.style.opacity='1';};
+      btn.onmouseleave=function(){btn.style.opacity='0.9';};
 
       var switching=false;
-      var startSwitch=function(ev){
-        try{ if(ev) ev.preventDefault(); }catch(_){}
+      btn.onclick=function(ev){
+        try{
+          if(ev){
+            ev.preventDefault();
+            ev.stopPropagation();
+          }
+        }catch(_){}
         if(switching) return false;
         switching=true;
         btn.style.pointerEvents='none';
@@ -561,17 +568,14 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         fetch('/__wsf_builtin', { method:'POST', cache:'no-store' })
           .catch(function(){})
           .finally(function(){
-            // Fallback path that does not rely on tauri:// or tauri.localhost.
+            // Fallback path that avoids tauri:// unknown-scheme.
             setTimeout(function(){
-              window.location.replace('/__wsf_builtin?fallback=1');
+              window.location.href='https://tauri.localhost/#/setup';
             }, 1100);
           });
         return false;
       };
-
-      btn.addEventListener('click', startSwitch, { passive:false });
-      btn.addEventListener('touchstart', startSwitch, { passive:false });
-      (document.body || document.documentElement).appendChild(btn);
+      document.body.appendChild(btn);
     }catch(_){}
   }
 
@@ -579,9 +583,8 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
     document.addEventListener('DOMContentLoaded', inject, { once:true });
   }
   inject();
-
-  var mo=new MutationObserver(function(){ inject(); });
-  mo.observe(document.documentElement || document.body, { childList:true, subtree:true });
+  setTimeout(inject, 300);
+  setTimeout(inject, 1200);
 })();
 </script>"#;
 
@@ -590,25 +593,8 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   if(window.__WSF_SAFE_AREA_PATCHED__) return;
   window.__WSF_SAFE_AREA_PATCHED__=true;
 
-  function readInset(edge){
-    try{
-      var probe=document.createElement('div');
-      probe.style.cssText='position:fixed;'+edge+':0;visibility:hidden;pointer-events:none;padding-'+edge+':env(safe-area-inset-'+edge+');';
-      (document.body || document.documentElement).appendChild(probe);
-      var cs=getComputedStyle(probe);
-      var val=parseFloat(edge==='top' ? cs.paddingTop : cs.paddingBottom);
-      probe.remove();
-      return Number.isFinite(val) ? val : 0;
-    }catch(_){
-      return 0;
-    }
-  }
-
   function patchBars(){
     try{
-      var topInset=Math.max(readInset('top'), 24);
-      var bottomInset=Math.max(readInset('bottom'), 24);
-
       var style=document.getElementById('__wsf_safe_area_style');
       if(!style){
         style=document.createElement('style');
@@ -616,41 +602,16 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
         (document.head || document.documentElement).appendChild(style);
       }
       style.textContent=
-        ':root{--wsf-safe-top:'+topInset+'px;--wsf-safe-bottom:'+bottomInset+'px;}' +
+        ':root{--wsf-safe-top:max(env(safe-area-inset-top), 24px);--wsf-safe-bottom:max(env(safe-area-inset-bottom), 24px);}' +
         '@media (max-width: 900px){' +
         '.ctrls-bar{padding-top:var(--wsf-safe-top)!important;}' +
         '.dock{bottom:calc(var(--spacing,4px) * 2 + var(--wsf-safe-bottom))!important;}' +
         '.dock-shadow{height:var(--wsf-safe-bottom)!important;}' +
         '}';
-
-      var nodes=document.querySelectorAll('body *');
-      for(var i=0;i<nodes.length;i++){
-        var el=nodes[i];
-        if(!el || !el.style) continue;
-        var cs=window.getComputedStyle(el);
-        if(cs.position!=='fixed' && cs.position!=='sticky') continue;
-        var rect=el.getBoundingClientRect();
-        if(rect.width < window.innerWidth * 0.72) continue;
-        if(rect.height <= 0 || rect.height > 120) continue;
-
-        var topVal=parseFloat(cs.top || '');
-        if(!Number.isNaN(topVal) && topVal<=2 && !el.dataset.wsfSafeTopPatched){
-          el.dataset.wsfSafeTopPatched='1';
-          el.style.top='calc(' + topVal + 'px + var(--wsf-safe-top))';
-        }
-
-        var bottomVal=parseFloat(cs.bottom || '');
-        if(!Number.isNaN(bottomVal) && bottomVal<=2 && !el.dataset.wsfSafeBottomPatched){
-          el.dataset.wsfSafeBottomPatched='1';
-          el.style.bottom='calc(' + bottomVal + 'px + var(--wsf-safe-bottom))';
-        }
-      }
     }catch(_){}
   }
 
   patchBars();
-  var mo=new MutationObserver(function(){ patchBars(); });
-  mo.observe(document.documentElement || document.body, { childList:true, subtree:true });
   window.addEventListener('resize', patchBars);
   window.addEventListener('load', patchBars);
   setTimeout(patchBars, 300);
