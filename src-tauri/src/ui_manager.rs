@@ -551,8 +551,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
       .finally(function(){
         // If backend-side navigation fails unexpectedly, keep a local fallback.
         setTimeout(function(){
-          window.location.href='tauri://localhost/';
-          setTimeout(function(){window.location.href='https://tauri.localhost/';},1200);
+          window.location.href='https://tauri.localhost/#/setup';
         }, 1200);
       });
   };
@@ -560,18 +559,41 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 })();
 </script>"#;
 
-const SAFE_AREA_PATCH_SCRIPT: &str = r#"<script>
+const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 (function(){
-  if(window.__WSF_SAFE_AREA_PATCHED__) return;
-  window.__WSF_SAFE_AREA_PATCHED__=true;
-  var style=document.createElement('style');
-  style.textContent=[
-    'html,body{',
-    'padding-top:max(env(safe-area-inset-top), 10px) !important;',
-    'box-sizing:border-box;',
-    '}'
-  ].join('');
-  document.head.appendChild(style);
+  if(window.__WSF_SAFE_AREA_FIXED_PATCHED__) return;
+  window.__WSF_SAFE_AREA_FIXED_PATCHED__=true;
+
+  function patchBars(){
+    try{
+      var nodes=document.querySelectorAll('body *');
+      for(var i=0;i<nodes.length;i++){
+        var el=nodes[i];
+        if(!el || !el.style) continue;
+        var cs=window.getComputedStyle(el);
+        if(cs.position!=='fixed' && cs.position!=='sticky') continue;
+
+        var topVal=parseFloat(cs.top || '');
+        if(!Number.isNaN(topVal) && topVal<=2 && !el.dataset.wsfSafeTopPatched){
+          el.dataset.wsfSafeTopPatched='1';
+          el.style.top='calc(' + topVal + 'px + env(safe-area-inset-top))';
+        }
+
+        var bottomVal=parseFloat(cs.bottom || '');
+        if(!Number.isNaN(bottomVal) && bottomVal<=2 && !el.dataset.wsfSafeBottomPatched){
+          el.dataset.wsfSafeBottomPatched='1';
+          el.style.bottom='calc(' + bottomVal + 'px + env(safe-area-inset-bottom))';
+        }
+      }
+    }catch(_){}
+  }
+
+  patchBars();
+  var mo=new MutationObserver(function(){ patchBars(); });
+  mo.observe(document.documentElement || document.body, { childList:true, subtree:true });
+  window.addEventListener('load', patchBars);
+  setTimeout(patchBars, 300);
+  setTimeout(patchBars, 1000);
 })();
 </script>"#;
 
@@ -660,18 +682,14 @@ fn navigate_main_to_builtin() {
                 let _ = window.show();
                 let _ = window.set_focus();
             } else if let Some(window) = handle.get_webview_window("main") {
-                let _ = window.eval(
-                    "window.location.href='tauri://localhost/';setTimeout(function(){window.location.href='https://tauri.localhost/';},900);",
-                );
+                let _ = window.eval("window.location.href='https://tauri.localhost/#/setup';");
             }
         }
 
         #[cfg(not(desktop))]
         {
             if let Some(window) = handle.get_webview_window("main") {
-                let _ = window.eval(
-                    "window.location.href='tauri://localhost/';setTimeout(function(){window.location.href='https://tauri.localhost/';},900);",
-                );
+                let _ = window.eval("window.location.href='https://tauri.localhost/#/setup';");
             }
         }
     });
@@ -991,7 +1009,7 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>) -> Vec<u8> {
 
     // Inject scripts right after <head> so they run before SPA bundles.
     let mut head_scripts = String::new();
-    head_scripts.push_str(SAFE_AREA_PATCH_SCRIPT);
+    head_scripts.push_str(SAFE_AREA_FIXED_PATCH_SCRIPT);
     head_scripts.push_str(CORS_PROXY_PATCH_SCRIPT);
 
     if let Some(data) = storage_b64 {
