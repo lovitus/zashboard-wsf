@@ -152,7 +152,18 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Zashboard v__VERSION__'
-          releaseBody: 'See the assets to download and install this version.'
+          releaseBody: |
+            Zashboard Native v__VERSION__
+
+            Release assets for this tag are attached below.
+
+            Documentation:
+            - README: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md
+            - CHANGELOG: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md
+            - Maintenance: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/readme/MAINTENANCE.md
+
+            Note:
+            - Native app release version and built-in upstream UI version are tracked separately in this repository.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

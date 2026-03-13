@@ -1,6 +1,42 @@
 # Changelog
 
-# Changelog
+This file contains both:
+
+- native-project release notes for `zashboard-wsf`
+- upstream zashboard history retained below for reference
+
+## [1.0.0](https://github.com/lovitus/zashboard-wsf/releases/tag/v1.0.0) (2026-03-13)
+
+### Native Release Summary
+
+First stable native release of `zashboard-wsf`.
+
+Built-in upstream UI baseline for this release: `zashboard 2.7.0`.
+
+### Highlights
+
+- add native Tauri runtime around zashboard for desktop and mobile usage
+- add multi-backend management and tunnel integration with `gust` / `slider`
+- add upstream UI version management:
+  fetch releases, download `dist.zip`, activate, deactivate, delete, custom release URLs
+- add sidecar embedding and release CI integration for Windows and macOS
+- add Android packaging and signing in GitHub Actions
+- add Android-specific upstream UI recovery flow so users can return to the built-in UI
+
+### Stability Work Included Before 1.0.0
+
+- fix upstream UI storage path on Android so downloaded UI assets are written to app-writable storage
+- fix Android safe-area handling for built-in UI and upstream UI entry points
+- fix tap behavior on mobile setup/config items after returning from injected controls
+- harden built-in UI return flow with multiple recovery paths instead of a single brittle URL redirect
+- limit release CI targets to currently validated platforms:
+  Windows x64, Windows x86, macOS Apple Silicon, Android
+
+### Known Limitations
+
+- upstream UI `Proxies` and `Rules` can still show transient `502` / `Network Error` depending on backend timing and upstream behavior
+- Android upstream-to-built-in recovery may briefly flash the screen during fallback or restart-style recovery
+- Linux, macOS Intel, iOS, and other architectures remain intentionally disabled in CI until validated
 
 ## [2.7.0](https://github.com/Zephyruso/zashboard/compare/v2.6.1...v2.7.0) (2026-02-27)
 
