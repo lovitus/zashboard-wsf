@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
+#[cfg(desktop)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri::{Manager, State};
 
@@ -790,22 +791,28 @@ fn navigate_main_to_builtin() {
                 }
             }
 
-            // 2) Try opening a dedicated recovery window with built-in app URL.
+            // 2) Try a dedicated recovery window without desktop-only APIs.
             if let Some(existing) = handle.get_webview_window("wsf-builtin-recover") {
-                let _ = existing.close();
+                if let Ok(target) = tauri::Url::parse("https://tauri.localhost/index.html#/setup") {
+                    if existing.navigate(target).is_ok() {
+                        eprintln!("WSF builtin switch: mobile reused recovery window");
+                        return;
+                    }
+                }
+                let _ = existing.eval(
+                    "(function(){try{window.location.replace('https://tauri.localhost/index.html#/setup');}catch(_){}})();",
+                );
+                return;
             }
 
-            match WebviewWindowBuilder::new(
+            match tauri::WebviewWindowBuilder::new(
                 &handle,
                 "wsf-builtin-recover",
-                WebviewUrl::App("index.html".into()),
+                tauri::WebviewUrl::App("index.html".into()),
             )
-            .build()
-            {
-                Ok(window) => {
+            .build() {
+                Ok(_window) => {
                     eprintln!("WSF builtin switch: mobile opened recovery built-in window");
-                    let _ = window.show();
-                    let _ = window.set_focus();
                     return;
                 }
                 Err(e) => {
