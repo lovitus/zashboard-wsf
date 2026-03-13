@@ -35,8 +35,8 @@ This file tracks practical checks to run before each tagged release.
 
 - Ensure `release.yml` target policy is still correct for current phase
 - Trigger release by tag (`v*`) only when branch is clean
-- After CI assets are attached, publish the release and replace draft notes with the versioned notes file:
-  `gh release edit vX.Y.Z --notes-file readme/RELEASE_NOTES_vX.Y.Z.md --draft=false`
+- After CI assets are attached, verify the published release notes and replace the default body with the versioned notes file if needed:
+  `gh release edit vX.Y.Z --notes-file readme/RELEASE_NOTES_vX.Y.Z.md`
 
 ## 5) Release Notes Content
 

@@ -2,17 +2,17 @@ mod ui_manager;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 #[cfg(desktop)]
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
+use tauri::{Manager, State};
 #[cfg(desktop)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
-use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 
@@ -52,8 +52,12 @@ mod job_object {
 
     #[repr(C)]
     struct IoCounters {
-        read_ops: u64, write_ops: u64, other_ops: u64,
-        read_bytes: u64, write_bytes: u64, other_bytes: u64,
+        read_ops: u64,
+        write_ops: u64,
+        other_ops: u64,
+        read_bytes: u64,
+        write_bytes: u64,
+        other_bytes: u64,
     }
 
     #[repr(C)]
@@ -81,7 +85,8 @@ mod job_object {
             info.basic.limit_flags = KILL_ON_JOB_CLOSE;
 
             let ok = SetInformationJobObject(
-                job, INFO_CLASS_EXTENDED,
+                job,
+                INFO_CLASS_EXTENDED,
                 &info as *const _ as *const u8,
                 std::mem::size_of::<ExtendedLimitInfo>() as u32,
             );
@@ -168,7 +173,11 @@ fn load_configs(path: &PathBuf) -> Vec<TunnelConfig> {
         match std::fs::read_to_string(path) {
             Ok(data) => {
                 let configs: Vec<TunnelConfig> = serde_json::from_str(&data).unwrap_or_default();
-                eprintln!("Loaded {} tunnel configs from {}", configs.len(), path.display());
+                eprintln!(
+                    "Loaded {} tunnel configs from {}",
+                    configs.len(),
+                    path.display()
+                );
                 configs
             }
             Err(e) => {
@@ -189,9 +198,17 @@ fn save_configs(configs: &[TunnelConfig], path: &PathBuf) {
     match serde_json::to_string_pretty(configs) {
         Ok(data) => {
             if let Err(e) = std::fs::write(path, &data) {
-                eprintln!("WARNING: Failed to save configs to {}: {}", path.display(), e);
+                eprintln!(
+                    "WARNING: Failed to save configs to {}: {}",
+                    path.display(),
+                    e
+                );
             } else {
-                eprintln!("Saved {} tunnel configs to {}", configs.len(), path.display());
+                eprintln!(
+                    "Saved {} tunnel configs to {}",
+                    configs.len(),
+                    path.display()
+                );
             }
         }
         Err(e) => eprintln!("WARNING: Failed to serialize configs: {}", e),
@@ -223,7 +240,11 @@ fn fnv1a_hash(data: &[u8]) -> String {
     format!("{:016x}", h)
 }
 
-fn extract_embedded_binary(name: &str, compressed: &[u8], target_dir: &PathBuf) -> Result<PathBuf, String> {
+fn extract_embedded_binary(
+    name: &str,
+    compressed: &[u8],
+    target_dir: &PathBuf,
+) -> Result<PathBuf, String> {
     if compressed.is_empty() {
         return Err(format!("No embedded {} binary (dev mode)", name));
     }
@@ -251,11 +272,17 @@ fn extract_embedded_binary(name: &str, compressed: &[u8], target_dir: &PathBuf) 
     use std::io::Read;
     let mut decoder = GzDecoder::new(compressed);
     let mut data = Vec::new();
-    decoder.read_to_end(&mut data)
+    decoder
+        .read_to_end(&mut data)
         .map_err(|e| format!("Failed to decompress {}: {}", name, e))?;
 
-    std::fs::write(&target, &data)
-        .map_err(|e| format!("Failed to write {} (antivirus blocking?): {}", target.display(), e))?;
+    std::fs::write(&target, &data).map_err(|e| {
+        format!(
+            "Failed to write {} (antivirus blocking?): {}",
+            target.display(),
+            e
+        )
+    })?;
 
     #[cfg(unix)]
     {
@@ -402,7 +429,57 @@ fn resolve_tool_path(sidecar_dir: &PathBuf, tool: &str) -> PathBuf {
     base
 }
 
-fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<TunnelProcess, String> {
+fn resolve_runtime_dir(config_path: &Path) -> PathBuf {
+    if let Some(parent) = config_path.parent() {
+        return parent.to_path_buf();
+    }
+    dirs::data_dir().unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(target_os = "android")]
+fn apply_android_tunnel_dns_env(cmd: &mut Command, runtime_dir: &Path) -> Result<(), String> {
+    let prefix_dir = runtime_dir.join("termux");
+    let etc_dir = prefix_dir.join("etc");
+    let resolv_conf = etc_dir.join("resolv.conf");
+    let resolv_data = "nameserver 8.8.8.8\nnameserver 1.1.1.1\n";
+
+    std::fs::create_dir_all(&etc_dir).map_err(|e| {
+        format!(
+            "Failed to prepare Android DNS dir {}: {}",
+            etc_dir.display(),
+            e
+        )
+    })?;
+
+    let needs_write = match std::fs::read_to_string(&resolv_conf) {
+        Ok(existing) => existing.trim().is_empty(),
+        Err(_) => true,
+    };
+    if needs_write {
+        std::fs::write(&resolv_conf, resolv_data).map_err(|e| {
+            format!(
+                "Failed to write Android DNS fallback file {}: {}",
+                resolv_conf.display(),
+                e
+            )
+        })?;
+    }
+
+    cmd.env("TERMUX_VERSION", "wsf");
+    cmd.env("PREFIX", &prefix_dir);
+    eprintln!(
+        "Android tunnel DNS fallback enabled via PREFIX={}",
+        prefix_dir.display()
+    );
+    Ok(())
+}
+
+fn spawn_tunnel(
+    sidecar_dir: &PathBuf,
+    runtime_dir: &Path,
+    tool: &str,
+    args: &[String],
+) -> Result<TunnelProcess, String> {
     // Ensure binary is available (extract from embedded if needed)
     ensure_sidecar_available(sidecar_dir, tool)?;
 
@@ -414,7 +491,10 @@ fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Tu
             "Binary not found: {}. Sidecar dir contents: {:?}",
             tool_path.display(),
             std::fs::read_dir(sidecar_dir)
-                .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect::<Vec<_>>())
+                .map(|rd| rd
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect::<Vec<_>>())
                 .unwrap_or_default()
         ));
     }
@@ -422,9 +502,16 @@ fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Tu
     match std::fs::metadata(&tool_path) {
         Ok(meta) => {
             if meta.len() == 0 {
-                return Err(format!("Binary is empty (0 bytes): {}", tool_path.display()));
+                return Err(format!(
+                    "Binary is empty (0 bytes): {}",
+                    tool_path.display()
+                ));
             }
-            eprintln!("Binary: {} (size: {} bytes)", tool_path.display(), meta.len());
+            eprintln!(
+                "Binary: {} (size: {} bytes)",
+                tool_path.display(),
+                meta.len()
+            );
 
             #[cfg(unix)]
             {
@@ -449,19 +536,25 @@ fn spawn_tunnel(sidecar_dir: &PathBuf, tool: &str, args: &[String]) -> Result<Tu
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
+    #[cfg(target_os = "android")]
+    apply_android_tunnel_dns_env(&mut cmd, runtime_dir)?;
+    #[cfg(not(target_os = "android"))]
+    let _ = runtime_dir;
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    let mut child = cmd.spawn()
-        .map_err(|e| {
-            let msg = format!("Failed to start {}: {}", tool_path.display(), e);
-            #[cfg(unix)]
-            {
-                if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    return format!("{} (Permission denied — SELinux or filesystem restriction?)", msg);
-                }
+    let mut child = cmd.spawn().map_err(|e| {
+        let msg = format!("Failed to start {}: {}", tool_path.display(), e);
+        #[cfg(unix)]
+        {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                return format!(
+                    "{} (Permission denied — SELinux or filesystem restriction?)",
+                    msg
+                );
             }
-            msg
-        })?;
+        }
+        msg
+    })?;
 
     // Assign to Job Object so this child is auto-killed when our app exits
     #[cfg(windows)]
@@ -582,10 +675,7 @@ async fn save_tunnel(
 }
 
 #[tauri::command]
-async fn remove_tunnel(
-    id: String,
-    state: State<'_, Mutex<TunnelState>>,
-) -> Result<(), String> {
+async fn remove_tunnel(id: String, state: State<'_, Mutex<TunnelState>>) -> Result<(), String> {
     let process_to_kill;
     {
         let mut s = state.lock().map_err(|e| e.to_string())?;
@@ -606,17 +696,22 @@ async fn start_tunnel(
     id: String,
     state: State<'_, Mutex<TunnelState>>,
 ) -> Result<TunnelStatus, String> {
-    let (sidecar_dir, tool, args) = {
+    let (sidecar_dir, runtime_dir, tool, args) = {
         let s = state.lock().map_err(|e| e.to_string())?;
         let config = s
             .configs
             .iter()
             .find(|c| c.id == id)
             .ok_or_else(|| format!("Tunnel {} not found", id))?;
-        (s.sidecar_dir.clone(), config.tool.clone(), config.args.clone())
+        (
+            s.sidecar_dir.clone(),
+            resolve_runtime_dir(&s.config_path),
+            config.tool.clone(),
+            config.args.clone(),
+        )
     };
 
-    let process = spawn_tunnel(&sidecar_dir, &tool, &args)?;
+    let process = spawn_tunnel(&sidecar_dir, &runtime_dir, &tool, &args)?;
     let pid = process.child.id();
 
     {
@@ -637,7 +732,11 @@ async fn start_tunnel(
                     let error_msg = format!(
                         "Process exited immediately ({}). Output: {}",
                         exit_status,
-                        if logs.is_empty() { "(no output captured)".to_string() } else { logs.join(" | ") }
+                        if logs.is_empty() {
+                            "(no output captured)".to_string()
+                        } else {
+                            logs.join(" | ")
+                        }
                     );
                     eprintln!("Tunnel {} early exit: {}", id, error_msg);
                     s.processes.remove(&id);
@@ -688,11 +787,9 @@ async fn stop_tunnel(
 }
 
 #[tauri::command]
-async fn health_check_tunnels(
-    state: State<'_, Mutex<TunnelState>>,
-) -> Result<Vec<String>, String> {
+async fn health_check_tunnels(state: State<'_, Mutex<TunnelState>>) -> Result<Vec<String>, String> {
     // Collect dead tunnels that should still be running
-    let to_restart: Vec<(String, String, Vec<String>, PathBuf)>;
+    let to_restart: Vec<(String, String, Vec<String>, PathBuf, PathBuf)>;
     {
         let mut s = state.lock().map_err(|e| e.to_string())?;
         let running_ids: Vec<String> = s.running_set.iter().cloned().collect();
@@ -725,6 +822,7 @@ async fn health_check_tunnels(
                     config.tool.clone(),
                     config.args.clone(),
                     s.sidecar_dir.clone(),
+                    resolve_runtime_dir(&s.config_path),
                 ))
             })
             .collect();
@@ -740,9 +838,9 @@ async fn health_check_tunnels(
     }
 
     let mut restarted = Vec::new();
-    for (id, tool, args, sidecar_dir) in to_restart {
+    for (id, tool, args, sidecar_dir, runtime_dir) in to_restart {
         eprintln!("Health check: restarting tunnel {}", id);
-        match spawn_tunnel(&sidecar_dir, &tool, &args) {
+        match spawn_tunnel(&sidecar_dir, &runtime_dir, &tool, &args) {
             Ok(process) => {
                 let mut s = state.lock().map_err(|e| e.to_string())?;
                 s.processes.insert(id.clone(), process);
@@ -812,15 +910,12 @@ fn show_or_create_window(handle: &tauri::AppHandle) {
         win.set_focus().ok();
         restore_active_upstream_if_needed(handle, &win);
     } else {
-        let created = WebviewWindowBuilder::new(
-            handle,
-            "main",
-            WebviewUrl::App("index.html".into()),
-        )
-        .title("Zashboard - Mihomo Dashboard")
-        .inner_size(1200.0, 800.0)
-        .min_inner_size(400.0, 600.0)
-        .build();
+        let created =
+            WebviewWindowBuilder::new(handle, "main", WebviewUrl::App("index.html".into()))
+                .title("Zashboard - Mihomo Dashboard")
+                .inner_size(1200.0, 800.0)
+                .min_inner_size(400.0, 600.0)
+                .build();
 
         if let Ok(win) = created {
             restore_active_upstream_if_needed(handle, &win);
@@ -977,17 +1072,15 @@ pub fn run() {
                     .icon(app.default_window_icon().unwrap().clone())
                     .tooltip("Zashboard")
                     .menu(&tray_menu)
-                    .on_menu_event(|app, event| {
-                        match event.id().as_ref() {
-                            "show" => {
-                                show_or_create_window(app);
-                            }
-                            "quit" => {
-                                SHOULD_EXIT.store(true, Ordering::SeqCst);
-                                app.exit(0);
-                            }
-                            _ => {}
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "show" => {
+                            show_or_create_window(app);
                         }
+                        "quit" => {
+                            SHOULD_EXIT.store(true, Ordering::SeqCst);
+                            app.exit(0);
+                        }
+                        _ => {}
                     })
                     .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
                         if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
@@ -999,12 +1092,19 @@ pub fn run() {
 
             // --- Auto-start tunnels ---
             let state = app.state::<Mutex<TunnelState>>();
-            let auto_start_configs: Vec<(String, String, Vec<String>)> = {
+            let auto_start_configs: Vec<(String, String, Vec<String>, PathBuf)> = {
                 let s = state.lock().unwrap();
                 s.configs
                     .iter()
                     .filter(|c| c.auto_start)
-                    .map(|c| (c.id.clone(), c.tool.clone(), c.args.clone()))
+                    .map(|c| {
+                        (
+                            c.id.clone(),
+                            c.tool.clone(),
+                            c.args.clone(),
+                            resolve_runtime_dir(&s.config_path),
+                        )
+                    })
                     .collect()
             };
 
@@ -1012,8 +1112,8 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                for (id, tool, args) in auto_start_configs {
-                    match spawn_tunnel(&sidecar_dir_clone, &tool, &args) {
+                for (id, tool, args, runtime_dir) in auto_start_configs {
+                    match spawn_tunnel(&sidecar_dir_clone, &runtime_dir, &tool, &args) {
                         Ok(process) => {
                             let state = handle.state::<Mutex<TunnelState>>();
                             let mut s = state.lock().unwrap();

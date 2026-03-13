@@ -5,6 +5,26 @@ This file contains both:
 - native-project release notes for `zashboard-wsf`
 - upstream zashboard history retained below for reference
 
+## [1.0.1](https://github.com/lovitus/zashboard-wsf/releases/tag/v1.0.1) (2026-03-13)
+
+### Native Release Summary
+
+Android tunnel DNS compatibility fix release.
+
+Built-in upstream UI baseline for this release: `zashboard 2.7.0`.
+
+### Highlights
+
+- fix Android built-in tunnel DNS resolution for `gust` and `slider` when the app environment does not provide `/etc/resolv.conf`
+- inject an Android-only Termux-compatible `PREFIX/etc/resolv.conf` before spawning tunnel sidecars
+- preserve existing desktop behavior and keep the fix isolated to tunnel child-process startup
+
+### Notes
+
+- this change specifically targets domain resolution failures on Android for tunnel arguments such as `gust -F <domain ...>`
+- the fallback chain now works as intended for packaged Android sidecars:
+  system `/etc/resolv.conf` -> app-provided `PREFIX/etc/resolv.conf` -> sidecar hardcoded public DNS fallback
+
 ## [1.0.0](https://github.com/lovitus/zashboard-wsf/releases/tag/v1.0.0) (2026-03-13)
 
 ### Native Release Summary
