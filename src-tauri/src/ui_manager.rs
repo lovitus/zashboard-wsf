@@ -551,6 +551,71 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
     }catch(_){}
   }
 
+  function isTouchLikeDevice(){
+    try{
+      if((navigator.maxTouchPoints || 0) > 0) return true;
+      if(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+    }catch(_){}
+    return false;
+  }
+
+  function patchUpstreamSetupTouch(){
+    try{
+      if(!document.body || !isTouchLikeDevice()) return;
+      if(String(window.location.hash || '').indexOf('/setup') === -1) return;
+
+      var rows=document.querySelectorAll('div.flex.items-center.gap-2');
+      for(var i=0;i<rows.length;i++){
+        var row=rows[i];
+        if(!row || row.dataset.wsfSetupTouchPatched==='1') continue;
+
+        var buttons=[];
+        for(var j=0;j<row.children.length;j++){
+          var child=row.children[j];
+          if(child && child.tagName==='BUTTON'){
+            buttons.push(child);
+          }
+        }
+
+        if(buttons.length < 4) continue;
+        if(!(buttons[1].classList && buttons[1].classList.contains('flex-1'))) continue;
+
+        row.dataset.wsfSetupTouchPatched='1';
+        buttons[0].style.touchAction='none';
+
+        for(var k=1;k<buttons.length;k++){
+          var actionBtn=buttons[k];
+          if(!actionBtn || actionBtn.dataset.wsfNoDragStart==='1') continue;
+
+          actionBtn.dataset.wsfNoDragStart='1';
+          actionBtn.style.touchAction='manipulation';
+
+          var stopDragStart=function(ev){
+            try{
+              ev.stopPropagation();
+            }catch(_){}
+          };
+
+          actionBtn.addEventListener('pointerdown', stopDragStart, true);
+          actionBtn.addEventListener('mousedown', stopDragStart, true);
+          actionBtn.addEventListener('touchstart', stopDragStart, { capture:true, passive:true });
+        }
+      }
+    }catch(_){}
+  }
+
+  function scheduleSetupTouchPatch(){
+    try{
+      if(String(window.location.hash || '').indexOf('/setup') === -1) return;
+    }catch(_){
+      return;
+    }
+    setTimeout(patchUpstreamSetupTouch, 0);
+    setTimeout(patchUpstreamSetupTouch, 120);
+    setTimeout(patchUpstreamSetupTouch, 360);
+    setTimeout(patchUpstreamSetupTouch, 900);
+  }
+
   function trySwitchBuiltin(btn){
     try{
       if(btn && btn.dataset.busy === '1') return;
@@ -630,12 +695,15 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         };
         document.body.appendChild(setupBtn);
       }
+
+      scheduleSetupTouchPatch();
     }catch(_){}
   }
 
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded', inject, { once:true });
   }
+  window.addEventListener('hashchange', scheduleSetupTouchPatch);
   inject();
   setTimeout(inject, 300);
   setTimeout(inject, 1200);

@@ -5,6 +5,25 @@ This file contains both:
 - native-project release notes for `zashboard-wsf`
 - upstream zashboard history retained below for reference
 
+## [1.0.2](https://github.com/lovitus/zashboard-wsf/releases/tag/v1.0.2) (2026-03-14)
+
+### Native Release Summary
+
+Small Android upstream setup interaction fix release.
+
+Built-in upstream UI baseline for this release: `zashboard 2.7.0`.
+
+### Highlights
+
+- patch non-built-in upstream `#/setup` backend list interaction on touch devices
+- prevent backend action buttons in upstream setup from being too easily interpreted as drag start
+- keep backend reordering available from the dedicated drag handle instead of disabling draggable behavior outright
+
+### Notes
+
+- this patch is intentionally narrow and only targets the upstream setup backend list
+- built-in UI and upstream UI switching semantics are unchanged in this release
+
 ## [1.0.1](https://github.com/lovitus/zashboard-wsf/releases/tag/v1.0.1) (2026-03-13)
 
 ### Native Release Summary

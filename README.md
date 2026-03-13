@@ -2,7 +2,7 @@
 
 Native Mihomo dashboard application built with [Tauri v2](https://v2.tauri.app/), based on [Zephyruso/zashboard](https://github.com/Zephyruso/zashboard).
 
-`v1.0.1` is the current stable native release of this project.
+`v1.0.2` is the current stable native release of this project.
 
 ## Project Scope
 
@@ -27,7 +27,7 @@ This project intentionally uses two version lines:
 
 Current baseline:
 
-- Native app release line: `1.0.1`
+- Native app release line: `1.0.2`
 - Built-in upstream UI baseline: `2.7.0`
 
 Do not bump `package.json` just to publish a new native wrapper release unless the built-in upstream UI is actually updated.
@@ -130,8 +130,8 @@ Release workflow triggers on:
 Example:
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.2
+git push origin v1.0.2
 ```
 
 ## Tunnel Usage
@@ -170,7 +170,7 @@ readme/             maintenance notes, release notes, screenshots
 ## Documentation
 
 - Release checklist: [readme/MAINTENANCE.md](readme/MAINTENANCE.md)
-- Release notes: [readme/RELEASE_NOTES_v1.0.1.md](readme/RELEASE_NOTES_v1.0.1.md)
+- Release notes: [readme/RELEASE_NOTES_v1.0.2.md](readme/RELEASE_NOTES_v1.0.2.md)
 - Android tunnel background notes: [readme/ANDROID_TUNNEL_BACKGROUND.md](readme/ANDROID_TUNNEL_BACKGROUND.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 
