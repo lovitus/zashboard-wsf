@@ -30,6 +30,7 @@ This file tracks practical checks to run before each tagged release.
 - Top/bottom safe padding visible after entering backend
 - User can return to setup page from mobile UI
 - User can return from upstream UI to built-in UI
+- If tunnel behavior changed, update `readme/ANDROID_TUNNEL_BACKGROUND.md` and keep README / release notes aligned with the real Android background limitations
 
 ## 4) CI / Release Checks
 

@@ -80,6 +80,7 @@ Details live in [release.yml](.github/workflows/release.yml).
 - In upstream UI mode, `Proxies` and `Rules` can still show transient `502` or `Network Error` in some backend states. Current evidence points primarily to upstream/backend timing behavior rather than a deterministic wrapper bug.
 - Built-in UI and upstream UI run on different origins, so the wrapper must bridge request routing and localStorage migration. The implementation is recovery-oriented rather than elegant.
 - Android recovery from upstream UI is intentionally defensive. It may create a brief visual flash during fallback or restart-based recovery.
+- Android tunnel support is usable for foreground and short background sessions, but it is not implemented as a foreground service. Long-running pure-background localhost tunnel serving is not guaranteed.
 
 ## Development
 
@@ -142,6 +143,21 @@ When adding a Mihomo backend, enable tunnel support if the backend is only reach
 | `slider` | `-listen ltcp://:19090/127.0.0.1:9090 -forward ssh://user@host:22` |
 | `gust` | `-L tcp://:19090/127.0.0.1:9090 -F relay+ssh://user@host:22` |
 
+### Android Tunnel Behavior
+
+Android tunnel support in this project is intentionally conservative:
+
+- tunnel child processes can keep running after the app goes to background if Android does not kill the process
+- the project currently does not use an Android foreground service, wake lock, or persistent service notification
+- health checks and restart behavior are not designed as a background-resident daemon
+- long-running localhost tunnel use for external apps such as browsers or players is best treated as best-effort only
+
+Practical guidance:
+
+- foreground use is the most reliable mode
+- PiP or keeping the app visible may improve stability compared with full backgrounding
+- if your workflow depends on hours of continuous localhost tunnel serving, plan a dedicated Android tunnel service app instead of assuming this wrapper will behave like one
+
 ## Repository Layout
 
 ```text
@@ -155,6 +171,7 @@ readme/             maintenance notes, release notes, screenshots
 
 - Release checklist: [readme/MAINTENANCE.md](readme/MAINTENANCE.md)
 - Release notes: [readme/RELEASE_NOTES_v1.0.1.md](readme/RELEASE_NOTES_v1.0.1.md)
+- Android tunnel background notes: [readme/ANDROID_TUNNEL_BACKGROUND.md](readme/ANDROID_TUNNEL_BACKGROUND.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## License

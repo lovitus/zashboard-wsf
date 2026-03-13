@@ -46,6 +46,23 @@ This release is intentionally narrow:
 - unchanged: desktop tunnel behavior
 - unchanged: UI switching, backend management, release target matrix
 
+## Android Background Behavior
+
+This release improves Android tunnel DNS compatibility, but it does not change the project's background-service model.
+
+Users should understand the current scope clearly:
+
+- built-in `gust` / `slider` tunnels can continue working in background if Android keeps the app process alive
+- the project is not implemented as an Android foreground service
+- no wake lock or service-grade background persistence is claimed
+- long-duration localhost serving for external apps should be treated as best-effort only
+
+Recommended usage:
+
+- foreground usage is the most reliable
+- PiP or keeping the app visible may be more stable than full backgrounding
+- if a workflow requires strong long-duration background guarantees, a separate dedicated Android tunnel service app is the more appropriate design
+
 ## Release Targets
 
 Validated CI targets for `v1.0.1` remain:
