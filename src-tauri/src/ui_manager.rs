@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
-#[cfg(desktop)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri::{Manager, State};
 
@@ -537,45 +536,92 @@ fn mime_type(path: &str) -> &'static str {
 
 const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 (function(){
-  if(window.__WSF_BUILTIN_BTN_READY__) return;
-  window.__WSF_BUILTIN_BTN_READY__=true;
+  if(window.__WSF_NAV_BUTTONS_READY__) return;
+  window.__WSF_NAV_BUTTONS_READY__=true;
+
+  function goUpstreamSetup(){
+    try{
+      if(window.location.hash !== '#/setup'){
+        window.location.hash = '#/setup';
+      }
+      if(!String(window.location.hash || '').includes('/setup')){
+        window.location.href = window.location.origin + window.location.pathname + '#/setup';
+      }
+    }catch(_){}
+  }
+
+  function trySwitchBuiltin(btn){
+    try{
+      if(btn && btn.dataset.busy === '1') return;
+      if(btn){
+        btn.dataset.busy='1';
+        btn.style.pointerEvents='none';
+        btn.style.opacity='0.72';
+        btn.textContent='Switching...';
+      }
+
+      var postBuiltin=function(){
+        return fetch('/__wsf_builtin', { method:'POST', cache:'no-store', keepalive:true }).catch(function(){});
+      };
+      postBuiltin();
+      setTimeout(postBuiltin, 500);
+      setTimeout(postBuiltin, 1300);
+
+      // Keep user on current page if native switch fails; allow manual retry.
+      setTimeout(function(){
+        if(btn){
+          btn.style.pointerEvents='auto';
+          btn.style.opacity='0.9';
+          btn.dataset.busy='0';
+          btn.textContent='\u21A9 Built-in UI';
+        }
+      }, 4200);
+    }catch(_){}
+  }
 
   function inject(){
     try{
-      if(!document.body || document.getElementById('__wsf_builtin_btn')) return;
+      if(!document.body) return;
 
-      var btn=document.createElement('button');
-      btn.id='__wsf_builtin_btn';
-      btn.type='button';
-      btn.textContent='\u21A9 Built-in UI';
-      btn.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom), 16px) + 18px);z-index:2147483647;background:rgba(59,130,246,.85);color:#fff;padding:7px 12px;border-radius:8px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.9;transition:opacity .2s;white-space:nowrap;max-width:45vw;overflow:hidden;text-overflow:ellipsis;';
-      btn.onmouseenter=function(){btn.style.opacity='1';};
-      btn.onmouseleave=function(){btn.style.opacity='0.9';};
+      if(!document.getElementById('__wsf_builtin_btn')){
+        var btn=document.createElement('button');
+        btn.id='__wsf_builtin_btn';
+        btn.type='button';
+        btn.textContent='\u21A9 Built-in UI';
+        btn.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom), 16px) + 18px);z-index:2147483647;background:rgba(59,130,246,.85);color:#fff;padding:7px 12px;border-radius:8px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.9;transition:opacity .2s;white-space:nowrap;max-width:45vw;overflow:hidden;text-overflow:ellipsis;';
+        btn.onmouseenter=function(){btn.style.opacity='1';};
+        btn.onmouseleave=function(){btn.style.opacity='0.9';};
+        btn.onclick=function(ev){
+          try{
+            if(ev){
+              ev.preventDefault();
+              ev.stopPropagation();
+            }
+          }catch(_){}
+          trySwitchBuiltin(btn);
+          return false;
+        };
+        document.body.appendChild(btn);
+      }
 
-      var switching=false;
-      btn.onclick=function(ev){
-        try{
-          if(ev){
-            ev.preventDefault();
-            ev.stopPropagation();
-          }
-        }catch(_){}
-        if(switching) return false;
-        switching=true;
-        btn.style.pointerEvents='none';
-        btn.style.opacity='0.7';
-        btn.textContent='Switching...';
-        fetch('/__wsf_builtin', { method:'POST', cache:'no-store' })
-          .catch(function(){})
-          .finally(function(){
-            // Fallback path that avoids tauri:// unknown-scheme.
-            setTimeout(function(){
-              window.location.href='https://tauri.localhost/#/setup';
-            }, 1100);
-          });
-        return false;
-      };
-      document.body.appendChild(btn);
+      if(!document.getElementById('__wsf_setup_btn')){
+        var setupBtn=document.createElement('button');
+        setupBtn.id='__wsf_setup_btn';
+        setupBtn.type='button';
+        setupBtn.textContent='Setup';
+        setupBtn.style.cssText='position:fixed;left:12px;top:calc(max(env(safe-area-inset-top), 12px) + 8px);z-index:2147483647;background:rgba(255,255,255,.62);color:#111827;padding:6px 10px;border-radius:8px;border:1px solid rgba(107,114,128,.35);cursor:pointer;font-size:12px;line-height:1;backdrop-filter:blur(2px);';
+        setupBtn.onclick=function(ev){
+          try{
+            if(ev){
+              ev.preventDefault();
+              ev.stopPropagation();
+            }
+          }catch(_){}
+          goUpstreamSetup();
+          return false;
+        };
+        document.body.appendChild(setupBtn);
+      }
     }catch(_){}
   }
 
@@ -710,13 +756,68 @@ fn navigate_main_to_builtin() {
 
         #[cfg(not(desktop))]
         {
+            eprintln!("WSF builtin switch: mobile attempt start");
+
+            // 1) Try navigating current main window directly.
             if let Some(window) = handle.get_webview_window("main") {
-                if let Ok(target) = tauri::Url::parse("https://tauri.localhost/#/setup") {
-                    if window.navigate(target).is_ok() {
-                        return;
+                for candidate in [
+                    "https://tauri.localhost/index.html#/setup",
+                    "https://tauri.localhost/#/setup",
+                ] {
+                    match tauri::Url::parse(candidate) {
+                        Ok(target) => match window.navigate(target) {
+                            Ok(_) => {
+                                eprintln!(
+                                    "WSF builtin switch: mobile navigate succeeded -> {}",
+                                    candidate
+                                );
+                                return;
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "WSF builtin switch: mobile navigate failed ({}) -> {}",
+                                    candidate, e
+                                );
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!(
+                                "WSF builtin switch: mobile url parse failed ({}) -> {}",
+                                candidate, e
+                            );
+                        }
                     }
                 }
-                let _ = window.eval("window.location.replace('https://tauri.localhost/#/setup');");
+            }
+
+            // 2) Try opening a dedicated recovery window with built-in app URL.
+            if let Some(existing) = handle.get_webview_window("wsf-builtin-recover") {
+                let _ = existing.close();
+            }
+
+            match WebviewWindowBuilder::new(
+                &handle,
+                "wsf-builtin-recover",
+                WebviewUrl::App("index.html".into()),
+            )
+            .build()
+            {
+                Ok(window) => {
+                    eprintln!("WSF builtin switch: mobile opened recovery built-in window");
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("WSF builtin switch: mobile recovery window failed: {}", e);
+                }
+            }
+
+            // 3) Last fallback: run in-page JS with multiple candidates.
+            if let Some(window) = handle.get_webview_window("main") {
+                let _ = window.eval(
+                    "(function(){var c=['https://tauri.localhost/index.html#/setup','https://tauri.localhost/#/setup'];var i=0;function n(){if(i>=c.length)return;try{window.location.replace(c[i]);}catch(_){}i++;setTimeout(n,350);}n();})();",
+                );
             }
         }
     });
@@ -805,7 +906,13 @@ fn handle_http_request(
         }
         write_active_version(base_dir, None);
         write_storage_data(base_dir, None);
-        shutdown.store(true, Ordering::Relaxed);
+        let delayed_shutdown = shutdown.clone();
+        std::thread::spawn(move || {
+            // Keep the local server alive briefly so button retries still work
+            // while native built-in navigation is attempting multiple fallbacks.
+            std::thread::sleep(Duration::from_secs(8));
+            delayed_shutdown.store(true, Ordering::Relaxed);
+        });
         navigate_main_to_builtin();
         if req.method == "HEAD" {
             return send_http_response(&mut stream, 200, "text/plain", &[]);
@@ -814,7 +921,7 @@ fn handle_http_request(
             &mut stream,
             200,
             "text/html; charset=utf-8",
-            br#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font:14px sans-serif;padding:16px;">Switching to built-in UI...</body></html>"#,
+            br#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font:14px sans-serif;padding:16px;line-height:1.5;">Switching to built-in UI...<br/><button style="margin-top:12px;padding:8px 10px;" onclick="fetch('/__wsf_builtin',{method:'POST',cache:'no-store'}).catch(function(){});">Retry switch</button><button style="margin-top:12px;margin-left:8px;padding:8px 10px;" onclick="location.href=location.origin+location.pathname+'#/setup';">Open upstream setup</button></body></html>"#,
         );
     }
 
