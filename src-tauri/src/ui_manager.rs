@@ -546,7 +546,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         window.location.hash = '#/setup';
       }
       if(!String(window.location.hash || '').includes('/setup')){
-        window.location.href = window.location.origin + window.location.pathname + '#/setup';
+        window.location.href = window.location.origin + '/#/setup';
       }
     }catch(_){}
   }
@@ -567,6 +567,13 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
       postBuiltin();
       setTimeout(postBuiltin, 500);
       setTimeout(postBuiltin, 1300);
+      setTimeout(function(){
+        try{
+          if(!document.hidden){
+            window.location.replace('/__wsf_builtin?landing=1');
+          }
+        }catch(_){}
+      }, 2200);
 
       // Keep user on current page if native switch fails; allow manual retry.
       setTimeout(function(){
@@ -759,58 +766,23 @@ fn navigate_main_to_builtin() {
         {
             eprintln!("WSF builtin switch: mobile attempt start");
 
-            // 1) Try navigating current main window directly.
-            if let Some(window) = handle.get_webview_window("main") {
-                for candidate in [
-                    "https://tauri.localhost/index.html#/setup",
-                    "https://tauri.localhost/#/setup",
-                ] {
-                    match tauri::Url::parse(candidate) {
-                        Ok(target) => match window.navigate(target) {
-                            Ok(_) => {
-                                eprintln!(
-                                    "WSF builtin switch: mobile navigate succeeded -> {}",
-                                    candidate
-                                );
-                                return;
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "WSF builtin switch: mobile navigate failed ({}) -> {}",
-                                    candidate, e
-                                );
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!(
-                                "WSF builtin switch: mobile url parse failed ({}) -> {}",
-                                candidate, e
-                            );
-                        }
-                    }
-                }
-            }
-
-            // 2) Try a dedicated recovery window without desktop-only APIs.
-            if let Some(existing) = handle.get_webview_window("wsf-builtin-recover") {
-                if let Ok(target) = tauri::Url::parse("https://tauri.localhost/index.html#/setup") {
-                    if existing.navigate(target).is_ok() {
-                        eprintln!("WSF builtin switch: mobile reused recovery window");
-                        return;
-                    }
-                }
-                let _ = existing.eval(
-                    "(function(){try{window.location.replace('https://tauri.localhost/index.html#/setup');}catch(_){}})();",
-                );
-                return;
-            }
+            // On Android, URL-based navigation can report success before ultimately
+            // landing on ERR_CONNECTION_REFUSED. Prefer opening a fresh App webview.
+            let recover_label = format!(
+                "wsf-builtin-recover-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
+            );
 
             match tauri::WebviewWindowBuilder::new(
                 &handle,
-                "wsf-builtin-recover",
+                recover_label,
                 tauri::WebviewUrl::App("index.html".into()),
             )
-            .build() {
+            .build()
+            {
                 Ok(_window) => {
                     eprintln!("WSF builtin switch: mobile opened recovery built-in window");
                     return;
@@ -820,13 +792,20 @@ fn navigate_main_to_builtin() {
                 }
             }
 
-            // 3) Last fallback: run in-page JS with multiple candidates.
-            if let Some(window) = handle.get_webview_window("main") {
-                let _ = window.eval(
-                    "(function(){var c=['https://tauri.localhost/index.html#/setup','https://tauri.localhost/#/setup'];var i=0;function n(){if(i>=c.length)return;try{window.location.replace(c[i]);}catch(_){}i++;setTimeout(n,350);}n();})();",
-                );
-            }
+            eprintln!("WSF builtin switch: mobile native recovery unavailable, waiting for landing page fallback");
         }
+    });
+}
+
+fn request_app_restart() {
+    let Some(handle) = APP_HANDLE.get().cloned() else {
+        return;
+    };
+
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(250));
+        eprintln!("WSF builtin switch: requesting app restart");
+        handle.request_restart();
     });
 }
 
@@ -911,6 +890,9 @@ fn handle_http_request(
                 b"Method Not Allowed",
             );
         }
+        let wants_restart = query
+            .and_then(|q| query_param(q, "restart"))
+            .is_some();
         write_active_version(base_dir, None);
         write_storage_data(base_dir, None);
         let delayed_shutdown = shutdown.clone();
@@ -920,7 +902,11 @@ fn handle_http_request(
             std::thread::sleep(Duration::from_secs(8));
             delayed_shutdown.store(true, Ordering::Relaxed);
         });
-        navigate_main_to_builtin();
+        if wants_restart {
+            request_app_restart();
+        } else {
+            navigate_main_to_builtin();
+        }
         if req.method == "HEAD" {
             return send_http_response(&mut stream, 200, "text/plain", &[]);
         }
@@ -928,7 +914,7 @@ fn handle_http_request(
             &mut stream,
             200,
             "text/html; charset=utf-8",
-            br#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font:14px sans-serif;padding:16px;line-height:1.5;">Switching to built-in UI...<br/><button style="margin-top:12px;padding:8px 10px;" onclick="fetch('/__wsf_builtin',{method:'POST',cache:'no-store'}).catch(function(){});">Retry switch</button><button style="margin-top:12px;margin-left:8px;padding:8px 10px;" onclick="location.href=location.origin+location.pathname+'#/setup';">Open upstream setup</button></body></html>"#,
+            br#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font:14px sans-serif;padding:16px;line-height:1.5;">Switching to built-in UI...<br/><button style="margin-top:12px;padding:8px 10px;" onclick="fetch('/__wsf_builtin',{method:'POST',cache:'no-store'}).catch(function(){});">Retry native switch</button><button style="margin-top:12px;margin-left:8px;padding:8px 10px;" onclick="fetch('/__wsf_builtin?restart=1',{method:'POST',cache:'no-store'}).catch(function(){});">Restart app to built-in UI</button><button style="margin-top:12px;margin-left:8px;padding:8px 10px;" onclick="location.href=location.origin+'/#/setup';">Open upstream setup</button></body></html>"#,
         );
     }
 
