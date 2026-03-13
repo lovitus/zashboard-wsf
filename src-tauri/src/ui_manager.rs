@@ -539,7 +539,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 (function(){
   var btn=document.createElement('div');
   btn.innerHTML='\u21A9 Built-in UI';
-  btn.style.cssText='position:fixed;bottom:16px;right:16px;z-index:99999;background:#3b82f6;color:#fff;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.85;transition:opacity .2s';
+  btn.style.cssText='position:fixed;bottom:calc(env(safe-area-inset-bottom) + 72px);right:12px;z-index:99999;background:#3b82f6;color:#fff;padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.85;transition:opacity .2s;max-width:42vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
   btn.onmouseenter=function(){btn.style.opacity='1'};
   btn.onmouseleave=function(){btn.style.opacity='0.85'};
   btn.onclick=function(){
@@ -557,6 +557,21 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
       });
   };
   document.body.appendChild(btn);
+})();
+</script>"#;
+
+const SAFE_AREA_PATCH_SCRIPT: &str = r#"<script>
+(function(){
+  if(window.__WSF_SAFE_AREA_PATCHED__) return;
+  window.__WSF_SAFE_AREA_PATCHED__=true;
+  var style=document.createElement('style');
+  style.textContent=[
+    'html,body{',
+    'padding-top:max(env(safe-area-inset-top), 10px) !important;',
+    'box-sizing:border-box;',
+    '}'
+  ].join('');
+  document.head.appendChild(style);
 })();
 </script>"#;
 
@@ -976,6 +991,7 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>) -> Vec<u8> {
 
     // Inject scripts right after <head> so they run before SPA bundles.
     let mut head_scripts = String::new();
+    head_scripts.push_str(SAFE_AREA_PATCH_SCRIPT);
     head_scripts.push_str(CORS_PROXY_PATCH_SCRIPT);
 
     if let Some(data) = storage_b64 {
