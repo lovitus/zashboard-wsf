@@ -941,7 +941,7 @@ pub fn run() {
                             let ui_state = app.state::<Mutex<ui_manager::UiManagerState>>();
                             let mut ui = ui_state.lock().unwrap();
                             if let Some(ref shutdown) = ui.server_shutdown {
-                                shutdown.store(true, Ordering::Relaxed);
+                                shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
                             }
                             *ui = ui_manager::init_state_with_base_dir(ui_base_dir.clone());
                         }
