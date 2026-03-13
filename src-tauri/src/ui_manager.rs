@@ -537,52 +537,112 @@ fn mime_type(path: &str) -> &'static str {
 
 const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 (function(){
-  var btn=document.createElement('div');
-  btn.innerHTML='\u21A9 Built-in UI';
-  btn.style.cssText='position:fixed;bottom:calc(env(safe-area-inset-bottom) + 72px);right:12px;z-index:99999;background:#3b82f6;color:#fff;padding:7px 12px;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.85;transition:opacity .2s;max-width:42vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-  btn.onmouseenter=function(){btn.style.opacity='1'};
-  btn.onmouseleave=function(){btn.style.opacity='0.85'};
-  btn.onclick=function(){
-    btn.style.pointerEvents='none';
-    btn.style.opacity='0.65';
-    btn.innerHTML='Switching...';
-    fetch('/__wsf_builtin', { method: 'POST', cache: 'no-store' })
-      .catch(function(){})
-      .finally(function(){
-        // If backend-side navigation fails unexpectedly, keep a local fallback.
-        setTimeout(function(){
-          window.location.href='https://tauri.localhost/#/setup';
-        }, 1200);
-      });
-  };
-  document.body.appendChild(btn);
+  if(window.__WSF_BUILTIN_BTN_READY__) return;
+  window.__WSF_BUILTIN_BTN_READY__=true;
+
+  function inject(){
+    try{
+      if(document.getElementById('__wsf_builtin_btn')) return;
+
+      var btn=document.createElement('a');
+      btn.id='__wsf_builtin_btn';
+      btn.href='/__wsf_builtin?from=btn';
+      btn.textContent='\u21A9 Built-in UI';
+      btn.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom), 16px) + 20px);z-index:2147483647;background:rgba(59,130,246,.88);color:#fff;padding:7px 12px;border-radius:999px;text-decoration:none;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);white-space:nowrap;max-width:45vw;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(2px);';
+
+      var switching=false;
+      var startSwitch=function(ev){
+        try{ if(ev) ev.preventDefault(); }catch(_){}
+        if(switching) return false;
+        switching=true;
+        btn.style.pointerEvents='none';
+        btn.style.opacity='0.7';
+        btn.textContent='Switching...';
+        fetch('/__wsf_builtin', { method:'POST', cache:'no-store' })
+          .catch(function(){})
+          .finally(function(){
+            // Fallback path that does not rely on tauri:// or tauri.localhost.
+            setTimeout(function(){
+              window.location.replace('/__wsf_builtin?fallback=1');
+            }, 1100);
+          });
+        return false;
+      };
+
+      btn.addEventListener('click', startSwitch, { passive:false });
+      btn.addEventListener('touchstart', startSwitch, { passive:false });
+      (document.body || document.documentElement).appendChild(btn);
+    }catch(_){}
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', inject, { once:true });
+  }
+  inject();
+
+  var mo=new MutationObserver(function(){ inject(); });
+  mo.observe(document.documentElement || document.body, { childList:true, subtree:true });
 })();
 </script>"#;
 
 const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 (function(){
-  if(window.__WSF_SAFE_AREA_FIXED_PATCHED__) return;
-  window.__WSF_SAFE_AREA_FIXED_PATCHED__=true;
+  if(window.__WSF_SAFE_AREA_PATCHED__) return;
+  window.__WSF_SAFE_AREA_PATCHED__=true;
+
+  function readInset(edge){
+    try{
+      var probe=document.createElement('div');
+      probe.style.cssText='position:fixed;'+edge+':0;visibility:hidden;pointer-events:none;padding-'+edge+':env(safe-area-inset-'+edge+');';
+      (document.body || document.documentElement).appendChild(probe);
+      var cs=getComputedStyle(probe);
+      var val=parseFloat(edge==='top' ? cs.paddingTop : cs.paddingBottom);
+      probe.remove();
+      return Number.isFinite(val) ? val : 0;
+    }catch(_){
+      return 0;
+    }
+  }
 
   function patchBars(){
     try{
+      var topInset=Math.max(readInset('top'), 24);
+      var bottomInset=Math.max(readInset('bottom'), 24);
+
+      var style=document.getElementById('__wsf_safe_area_style');
+      if(!style){
+        style=document.createElement('style');
+        style.id='__wsf_safe_area_style';
+        (document.head || document.documentElement).appendChild(style);
+      }
+      style.textContent=
+        ':root{--wsf-safe-top:'+topInset+'px;--wsf-safe-bottom:'+bottomInset+'px;}' +
+        '@media (max-width: 900px){' +
+        '.ctrls-bar{padding-top:var(--wsf-safe-top)!important;}' +
+        '.dock{bottom:calc(var(--spacing,4px) * 2 + var(--wsf-safe-bottom))!important;}' +
+        '.dock-shadow{height:var(--wsf-safe-bottom)!important;}' +
+        '}';
+
       var nodes=document.querySelectorAll('body *');
       for(var i=0;i<nodes.length;i++){
         var el=nodes[i];
         if(!el || !el.style) continue;
         var cs=window.getComputedStyle(el);
         if(cs.position!=='fixed' && cs.position!=='sticky') continue;
+        var rect=el.getBoundingClientRect();
+        if(rect.width < window.innerWidth * 0.72) continue;
+        if(rect.height <= 0 || rect.height > 120) continue;
 
         var topVal=parseFloat(cs.top || '');
         if(!Number.isNaN(topVal) && topVal<=2 && !el.dataset.wsfSafeTopPatched){
           el.dataset.wsfSafeTopPatched='1';
-          el.style.top='calc(' + topVal + 'px + env(safe-area-inset-top))';
+          el.style.top='calc(' + topVal + 'px + var(--wsf-safe-top))';
         }
 
         var bottomVal=parseFloat(cs.bottom || '');
         if(!Number.isNaN(bottomVal) && bottomVal<=2 && !el.dataset.wsfSafeBottomPatched){
           el.dataset.wsfSafeBottomPatched='1';
-          el.style.bottom='calc(' + bottomVal + 'px + env(safe-area-inset-bottom))';
+          el.style.bottom='calc(' + bottomVal + 'px + var(--wsf-safe-bottom))';
         }
       }
     }catch(_){}
@@ -591,9 +651,10 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   patchBars();
   var mo=new MutationObserver(function(){ patchBars(); });
   mo.observe(document.documentElement || document.body, { childList:true, subtree:true });
+  window.addEventListener('resize', patchBars);
   window.addEventListener('load', patchBars);
   setTimeout(patchBars, 300);
-  setTimeout(patchBars, 1000);
+  setTimeout(patchBars, 1200);
 })();
 </script>"#;
 
@@ -689,7 +750,12 @@ fn navigate_main_to_builtin() {
         #[cfg(not(desktop))]
         {
             if let Some(window) = handle.get_webview_window("main") {
-                let _ = window.eval("window.location.href='https://tauri.localhost/#/setup';");
+                if let Ok(target) = tauri::Url::parse("https://tauri.localhost/#/setup") {
+                    if window.navigate(target).is_ok() {
+                        return;
+                    }
+                }
+                let _ = window.eval("window.location.replace('https://tauri.localhost/#/setup');");
             }
         }
     });
@@ -768,11 +834,27 @@ fn handle_http_request(
     let (path, query) = split_path_query(path_and_query);
 
     if path == "/__wsf_builtin" {
+        if req.method != "GET" && req.method != "HEAD" && req.method != "POST" {
+            return send_http_response(
+                &mut stream,
+                405,
+                "text/plain",
+                b"Method Not Allowed",
+            );
+        }
         write_active_version(base_dir, None);
         write_storage_data(base_dir, None);
         shutdown.store(true, Ordering::Relaxed);
         navigate_main_to_builtin();
-        return send_http_response(&mut stream, 200, "text/plain", b"ok");
+        if req.method == "HEAD" {
+            return send_http_response(&mut stream, 200, "text/plain", &[]);
+        }
+        return send_http_response(
+            &mut stream,
+            200,
+            "text/html; charset=utf-8",
+            br#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font:14px sans-serif;padding:16px;">Switching to built-in UI...</body></html>"#,
+        );
     }
 
     if path == "/__wsf_proxy" {
