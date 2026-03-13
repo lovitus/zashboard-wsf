@@ -138,11 +138,7 @@ fn build_http_client(timeout_secs: u64) -> Result<reqwest::Client, String> {
         .map_err(|e| format!("HTTP client error: {}", e))
 }
 
-pub fn init_state() -> UiManagerState {
-    let base_dir = dirs::data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("zashboard-wsf")
-        .join("ui_versions");
+fn build_state(base_dir: PathBuf) -> UiManagerState {
     if let Err(e) = std::fs::create_dir_all(&base_dir) {
         eprintln!("WARNING: Failed to create UI versions dir: {}", e);
     }
@@ -190,6 +186,19 @@ pub fn init_state() -> UiManagerState {
         server_shutdown,
         storage_data,
     }
+}
+
+pub fn init_state() -> UiManagerState {
+    let base_dir = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("zashboard-wsf")
+        .join("ui_versions");
+    build_state(base_dir)
+}
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub fn init_state_with_base_dir(base_dir: PathBuf) -> UiManagerState {
+    build_state(base_dir)
 }
 
 // --- Commands ---

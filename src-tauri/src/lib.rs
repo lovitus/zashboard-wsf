@@ -933,6 +933,20 @@ pub fn run() {
                 match app.path().app_data_dir() {
                     Ok(app_dir) => {
                         std::fs::create_dir_all(&app_dir).ok();
+
+                        // Rebuild UI manager state using the writable app data directory on mobile.
+                        // dirs::data_dir() may resolve to a read-only location on some Android devices.
+                        let ui_base_dir = app_dir.join("ui_versions");
+                        {
+                            let ui_state = app.state::<Mutex<ui_manager::UiManagerState>>();
+                            let mut ui = ui_state.lock().unwrap();
+                            if let Some(ref shutdown) = ui.server_shutdown {
+                                shutdown.store(true, Ordering::Relaxed);
+                            }
+                            *ui = ui_manager::init_state_with_base_dir(ui_base_dir.clone());
+                        }
+                        eprintln!("Mobile UI base dir: {}", ui_base_dir.display());
+
                         let mobile_config_path = app_dir.join("tunnels.json");
                         eprintln!("Mobile config path: {}", mobile_config_path.display());
 
