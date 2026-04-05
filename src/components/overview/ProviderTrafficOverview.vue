@@ -1,27 +1,23 @@
 <template>
-  <SectionCard
+  <div
+    class="card w-full"
     v-if="hasProvidersWithTraffic"
-    title="Provider traffic budget"
-    subtitle="Subscription usage across providers with quick visual thresholds."
-    body-class="p-4"
   >
-    <template #actions>
-      <StatusChip
-        :label="`${providersWithTraffic.length} providers`"
-        tone="info"
-      />
-    </template>
+    <div class="card-title px-4 pt-4">
+      {{ $t('providerTrafficOverview') }}
+    </div>
     <div
-      class="grid max-h-128 gap-3 overflow-y-auto"
+      class="card-body grid max-h-128 gap-2 overflow-y-auto"
       :style="
         hasMultipleProvidersWithTraffic
           ? `grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));`
           : 'grid-template-columns: 1fr;'
       "
     >
+      <!-- 总流量 -->
       <div
+        class="bg-base-200/50 flex flex-col gap-2 rounded-lg p-2"
         v-if="hasMultipleProvidersWithTraffic"
-        class="border-base-content/8 bg-base-200/50 flex flex-col gap-2 rounded-2xl border p-3"
       >
         <div class="flex items-center justify-between">
           <div class="text-lg font-medium">
@@ -42,11 +38,11 @@
           <div>{{ $t('usedTraffic') }}: {{ totalUsedStr }} / {{ totalTotalStr }}</div>
         </div>
       </div>
-
+      <!-- 各提供商流量 -->
       <div
         v-for="provider in providersWithTraffic"
         :key="provider.name"
-        class="border-base-content/8 bg-base-200/50 flex flex-col gap-2 rounded-2xl border p-3"
+        class="bg-base-200/50 flex flex-col gap-2 rounded-lg p-2"
       >
         <div class="flex items-center justify-between">
           <div class="text-lg font-medium">
@@ -68,12 +64,10 @@
         </div>
       </div>
     </div>
-  </SectionCard>
+  </div>
 </template>
 
 <script setup lang="ts">
-import SectionCard from '@/components/layout/SectionCard.vue'
-import StatusChip from '@/components/layout/StatusChip.vue'
 import { prettyBytesHelper } from '@/helper/utils'
 import { proxyProviederList } from '@/store/proxies'
 import { toFinite } from 'lodash'
@@ -115,11 +109,16 @@ const providersWithTraffic = computed<ProviderTrafficInfo[]>(() => {
     })
 })
 
-const hasProvidersWithTraffic = computed(() => providersWithTraffic.value.length > 0)
-const hasMultipleProvidersWithTraffic = computed(() => providersWithTraffic.value.length > 1)
+const hasProvidersWithTraffic = computed(() => {
+  return providersWithTraffic.value.length > 0
+})
+const hasMultipleProvidersWithTraffic = computed(() => {
+  return providersWithTraffic.value.length > 1
+})
 
+// 计算总流量
 const totalTraffic = computed(() => {
-  return providersWithTraffic.value.reduce(
+  const total = providersWithTraffic.value.reduce(
     (acc, provider) => ({
       used: acc.used + provider.used,
       remaining: acc.remaining + provider.remaining,
@@ -127,6 +126,7 @@ const totalTraffic = computed(() => {
     }),
     { used: 0, remaining: 0, total: 0 },
   )
+  return total
 })
 
 const totalPercentage = computed(() => {
@@ -134,11 +134,17 @@ const totalPercentage = computed(() => {
   return total > 0 ? toFinite(((used / total) * 100).toFixed(2)) : 0
 })
 
-const totalUsedStr = computed(() => prettyBytesHelper(totalTraffic.value.used, { binary: true }))
-const totalRemainingStr = computed(() =>
-  prettyBytesHelper(totalTraffic.value.remaining, { binary: true }),
-)
-const totalTotalStr = computed(() => prettyBytesHelper(totalTraffic.value.total, { binary: true }))
+const totalUsedStr = computed(() => {
+  return prettyBytesHelper(totalTraffic.value.used, { binary: true })
+})
+
+const totalRemainingStr = computed(() => {
+  return prettyBytesHelper(totalTraffic.value.remaining, { binary: true })
+})
+
+const totalTotalStr = computed(() => {
+  return prettyBytesHelper(totalTraffic.value.total, { binary: true })
+})
 
 const getProgressColor = (percentage: number) => {
   if (percentage >= 90) return 'progress-error'

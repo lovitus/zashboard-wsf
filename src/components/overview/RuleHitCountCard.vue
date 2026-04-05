@@ -1,17 +1,12 @@
 <template>
-  <SectionCard
+  <div
+    class="card w-full"
     v-if="hasRulesWithExtra"
-    title="Rule hit and miss trends"
-    subtitle="Spot frequently matched rules and misses without leaving the overview."
-    body-class="gap-4"
   >
-    <template #actions>
-      <StatusChip
-        :label="$t('ruleHitCountCard')"
-        tone="info"
-      />
-    </template>
-    <div class="grid gap-4">
+    <div class="card-title px-4 pt-4">
+      {{ $t('ruleHitCountCard') }}
+    </div>
+    <div class="card-body gap-4">
       <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
         <div class="flex flex-col gap-2">
           <div class="pb-2 text-sm font-bold">
@@ -27,15 +22,16 @@
         </div>
       </div>
     </div>
-  </SectionCard>
+  </div>
 </template>
 
 <script setup lang="ts">
-import SectionCard from '@/components/layout/SectionCard.vue'
-import StatusChip from '@/components/layout/StatusChip.vue'
 import RuleHitCountChart from '@/components/overview/RuleHitCountChart.vue'
 import { rules } from '@/store/rules'
 import { computed } from 'vue'
 
-const hasRulesWithExtra = computed(() => rules.value.some((rule) => rule.extra))
+// 检查是否有规则含有 extra 字段
+const hasRulesWithExtra = computed(() => {
+  return rules.value.some((rule) => rule.extra)
+})
 </script>

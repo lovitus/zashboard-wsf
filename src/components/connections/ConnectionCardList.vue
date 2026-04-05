@@ -5,12 +5,6 @@
   >
     <template v-slot:before>
       <ConnectionCtrl />
-      <div
-        v-if="renderConnections.length === 0"
-        class="px-2 pb-2"
-      >
-        <div class="zb-empty-state">No connections match the current filters.</div>
-      </div>
     </template>
     <template v-slot="{ item }: { item: Connection }">
       <ConnectionCard :conn="item" />

@@ -1,30 +1,20 @@
 <template>
   <div :class="wrapperClass">
     <button
-      :class="backendButtonClass"
+      class="btn btn-circle btn-sm bg-base-300"
       @click="showBackendSelectorDialog = true"
       @mouseenter="handlerMouseenterBackendSelector"
     >
-      <ServerIcon class="h-4 w-4 shrink-0" />
-      <span
-        v-if="showLabel"
-        class="truncate"
-      >
-        {{ currentBackendLabel }}
-      </span>
+      <ServerIcon class="h-5 w-5" />
     </button>
     <button
-      class="btn btn-sm btn-outline"
-      :class="vertical && 'btn-square'"
+      class="btn btn-circle btn-sm bg-base-300"
       @click="isSidebarCollapsed = !isSidebarCollapsed"
     >
       <component
         :is="isSidebarCollapsed ? ArrowRightCircleIcon : ArrowLeftCircleIcon"
-        class="h-4 w-4"
+        class="h-5 w-5"
       />
-      <span v-if="showLabel">
-        {{ isSidebarCollapsed ? 'Expand' : 'Collapse' }}
-      </span>
     </button>
   </div>
 
@@ -55,17 +45,9 @@ const props = defineProps<{
 }>()
 
 const wrapperClass = computed(() => {
-  return props.vertical ? 'flex flex-col items-stretch justify-center gap-2' : 'flex flex-col gap-2'
-})
-
-const showLabel = computed(() => !props.vertical)
-const currentBackendLabel = computed(() =>
-  activeBackend.value ? getLabelFromBackend(activeBackend.value) : 'No backend selected',
-)
-const backendButtonClass = computed(() => {
   return props.vertical
-    ? 'btn btn-sm btn-outline btn-square'
-    : 'btn btn-sm btn-outline justify-start'
+    ? 'flex flex-col items-center justify-center gap-2'
+    : 'flex flex-row-reverse items-center justify-center gap-2'
 })
 
 const handlerMouseenterBackendSelector = (e: MouseEvent) => {

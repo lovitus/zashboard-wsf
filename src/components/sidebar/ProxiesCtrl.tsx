@@ -1,10 +1,7 @@
 import { disconnectByIdAPI, isSingBox, updateProxyProviderAPI } from '@/api'
-import ActionGroup from '@/components/layout/ActionGroup.vue'
-import StatusChip from '@/components/layout/StatusChip.vue'
 import { renderGroups } from '@/composables/proxies'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { PROXY_SORT_TYPE, PROXY_TAB_TYPE, ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
-import { BUILTIN_ROUTE_META } from '@/constant/ui'
 import { getMinCardWidth } from '@/helper/utils'
 import { configs, updateConfigs } from '@/store/config'
 import { activeConnections } from '@/store/connections'
@@ -129,14 +126,6 @@ export default defineComponent({
       })
     })
     return () => {
-      const routeMeta = BUILTIN_ROUTE_META[ROUTE_NAME.proxies]
-      const titleBlock = (
-        <div class="min-w-0 flex-1">
-          <div class="text-base-content text-sm font-semibold">{t(routeMeta.titleKey)}</div>
-          <div class="text-base-content/55 truncate text-xs">{routeMeta.subtitle}</div>
-        </div>
-      )
-
       const tabs = (
         <div
           role="tablist"
@@ -158,11 +147,10 @@ export default defineComponent({
       )
       const upgradeAllIcon = proxiesTabShow.value === PROXY_TAB_TYPE.PROVIDER && (
         <button
-          class="btn btn-sm btn-outline"
+          class="btn btn-circle btn-sm"
           onClick={handlerClickUpdateAllProviders}
         >
           <ArrowPathIcon class={['h-4 w-4', isUpgrading.value && 'animate-spin']} />
-          <span class="max-md:hidden">{t('refresh')}</span>
         </button>
       )
       const modeSelect = configs.value && (
@@ -203,7 +191,7 @@ export default defineComponent({
 
       const latencyTestAll = (
         <button
-          class="btn btn-sm btn-outline"
+          class="btn btn-circle btn-sm"
           onClick={handlerClickLatencyTestAll}
         >
           {isAllLatencyTesting.value ? (
@@ -211,14 +199,13 @@ export default defineComponent({
           ) : (
             <BoltIcon class="h-4 w-4" />
           )}
-          <span class="max-md:hidden">Latency</span>
         </button>
       )
 
       const toggleCollapseAll = (
         <button
           class={[
-            'btn btn-sm btn-outline',
+            'btn btn-circle btn-sm',
             twoColumnProxyGroup.value &&
               proxiesTabShow.value === PROXY_TAB_TYPE.PROXIES &&
               'max-sm:hidden',
@@ -230,7 +217,6 @@ export default defineComponent({
           ) : (
             <ChevronDownIcon class="h-4 w-4" />
           )}
-          <span class="max-md:hidden">{hasNotCollapsed.value ? 'Collapse' : 'Expand'}</span>
         </button>
       )
 
@@ -246,11 +232,10 @@ export default defineComponent({
       const settingsModal = (
         <>
           <button
-            class="btn btn-sm btn-outline"
+            class="btn btn-circle btn-sm"
             onClick={() => (settingsModel.value = true)}
           >
             <WrenchScrewdriverIcon class="h-4 w-4" />
-            <span class="max-md:hidden">{t('moreSettings')}</span>
           </button>
           <DialogWrapper
             v-model={settingsModel.value}
@@ -346,53 +331,30 @@ export default defineComponent({
       )
 
       const content = !isLargeCtrlsBar.value ? (
-        <div class="zb-toolbar-grid">
-          <div class="zb-toolbar-main">
-            {titleBlock}
-            <StatusChip
-              label={
-                proxiesTabShow.value === PROXY_TAB_TYPE.PROXIES
-                  ? `${proxyGroupList.value.length} groups`
-                  : `${proxyProviederList.value.length} providers`
-              }
-              tone="info"
-            />
-          </div>
-          <ActionGroup label="Context">
-            {hasProviders.value && tabs}
+        <div class="flex flex-col gap-2 p-2">
+          {hasProviders.value && (
+            <div class="flex gap-2">
+              {tabs}
+              {upgradeAllIcon}
+            </div>
+          )}
+          <div class="flex w-full gap-2">
             {modeSelect}
-          </ActionGroup>
-          <ActionGroup label="Search">{searchInput}</ActionGroup>
-          <ActionGroup label="Actions">
-            {upgradeAllIcon}
+            {searchInput}
             {settingsModal}
             {toggleCollapseAll}
             {latencyTestAll}
-          </ActionGroup>
+          </div>
         </div>
       ) : (
-        <div class="zb-toolbar-grid">
-          <div class="zb-toolbar-main">
-            {titleBlock}
-            <ActionGroup label="Context">
-              {hasProviders.value && tabs}
-              {modeSelect}
-            </ActionGroup>
-            <div class="zb-toolbar-fill">
-              <ActionGroup
-                label="Search"
-                class="w-full"
-              >
-                <div class="zb-toolbar-search">{searchInput}</div>
-              </ActionGroup>
-            </div>
-            <ActionGroup label="Actions">
-              {upgradeAllIcon}
-              {settingsModal}
-              {toggleCollapseAll}
-              {latencyTestAll}
-            </ActionGroup>
-          </div>
+        <div class="flex gap-2 p-2">
+          {hasProviders.value && tabs}
+          {modeSelect}
+          <div class="flex flex-1">{searchInput}</div>
+          {upgradeAllIcon}
+          {settingsModal}
+          {toggleCollapseAll}
+          {latencyTestAll}
         </div>
       )
 

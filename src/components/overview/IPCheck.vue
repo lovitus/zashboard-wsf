@@ -1,38 +1,7 @@
 <template>
-  <div class="zb-panel relative flex min-h-32 flex-col gap-3 p-3">
-    <div class="flex items-start justify-between gap-3">
-      <div>
-        <div class="text-sm font-semibold">Public IP check</div>
-        <div class="zb-subtle-text text-xs">
-          Compare regional and global IP visibility without leaving overview.
-        </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <button
-          class="btn btn-outline btn-sm btn-square"
-          @click="showPrivacy = !showPrivacy"
-          @mouseenter="handlerShowPrivacyTip"
-        >
-          <EyeIcon
-            v-if="showPrivacy"
-            class="h-4 w-4"
-          />
-          <EyeSlashIcon
-            v-else
-            class="h-4 w-4"
-          />
-        </button>
-        <button
-          class="btn btn-primary btn-sm btn-square"
-          @click="getIPs"
-        >
-          <BoltIcon class="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-[auto_auto_1fr] gap-x-2 gap-y-2 text-sm">
-      <div class="text-left font-medium">ipip.net</div>
+  <div class="bg-base-200/50 relative flex h-28 flex-col gap-1 rounded-lg p-2">
+    <div class="grid grid-cols-[auto_auto_1fr] gap-x-2 gap-y-1">
+      <div class="text-left text-sm">ipip.net</div>
       <div class="text-right text-sm">:</div>
       <div class="text-sm">
         {{ showPrivacy ? ipForChina.ipWithPrivacy[0] : ipForChina.ip[0] }}
@@ -43,7 +12,7 @@
           ({{ showPrivacy ? ipForChina.ipWithPrivacy[1] : ipForChina.ip[1] }})
         </span>
       </div>
-      <div class="text-left font-medium">{{ IPInfoAPI }}</div>
+      <div class="text-left text-sm">{{ IPInfoAPI }}</div>
       <div class="text-right text-sm">:</div>
       <div class="text-sm">
         {{ showPrivacy ? ipForGlobal.ipWithPrivacy[0] : ipForGlobal.ip[0] }}
@@ -54,14 +23,29 @@
           ({{ showPrivacy ? ipForGlobal.ipWithPrivacy[1] : ipForGlobal.ip[1] }})
         </span>
       </div>
-      <div class="col-span-3 mt-1 flex flex-wrap items-center gap-2 text-xs">
-        <span class="badge badge-outline badge-sm">{{
-          showPrivacy ? 'Detailed' : 'Privacy mode'
-        }}</span>
-        <span class="zb-subtle-text"
-          >Refresh checks `/version`-safe overview IP providers only.</span
-        >
-      </div>
+    </div>
+
+    <div class="absolute right-2 bottom-2 flex items-center gap-2">
+      <button
+        class="btn btn-circle btn-sm flex items-center justify-center"
+        @click="showPrivacy = !showPrivacy"
+        @mouseenter="handlerShowPrivacyTip"
+      >
+        <EyeIcon
+          v-if="showPrivacy"
+          class="h-4 w-4"
+        />
+        <EyeSlashIcon
+          v-else
+          class="h-4 w-4"
+        />
+      </button>
+      <button
+        class="btn btn-circle btn-sm"
+        @click="getIPs"
+      >
+        <BoltIcon class="h-4 w-4" />
+      </button>
     </div>
   </div>
 </template>

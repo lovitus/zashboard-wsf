@@ -13,12 +13,6 @@
     @mouseup="handleMouseUp"
     @mouseleave="handleMouseUp"
   >
-    <div
-      v-if="rows.length === 0"
-      class="zb-empty-state mb-2"
-    >
-      No connections match the current filters.
-    </div>
     <div :style="{ height: `${totalSize}px` }">
       <table
         :class="['table rounded-none shadow-md', sizeOfTable, isManualTable && 'table-fixed']"
@@ -121,7 +115,7 @@
             }"
             class="hover:bg-primary! hover:text-primary-content"
             :class="[
-              index % 2 === 0 ? 'bg-base-100' : 'bg-base-200/80',
+              index % 2 === 0 ? 'bg-base-100' : 'bg-base-200',
               !isDragging ? 'cursor-pointer' : 'cursor-grabbing',
             ]"
             @click="handlerClickRow(rows[virtualRow.index])"

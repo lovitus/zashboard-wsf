@@ -1,23 +1,15 @@
 <template>
-  <div class="zb-panel w-full backdrop-blur-none!">
-    <div
-      class="need-blur border-base-content/8 flex items-center justify-between border-b px-4 py-4"
-    >
+  <div class="card w-full backdrop-blur-none!">
+    <div class="card-title need-blur flex items-center justify-between px-4 pt-4">
       <div class="flex w-full items-center gap-4 max-sm:flex-col max-sm:items-start">
         <div class="flex flex-1 items-center gap-2">
-          <div>
-            <div class="text-base font-semibold">{{ $t('totalConnections') }}</div>
-            <div class="text-base-content/55 text-xs">
-              Aggregate traffic by source, process, destination, or outbound.
-            </div>
-          </div>
+          {{ $t('totalConnections') }}
 
           <button
-            class="btn btn-sm btn-outline btn-error"
+            class="btn btn-circle btn-sm"
             @click="showClearDialog = true"
           >
             <TrashIcon class="h-4 w-4" />
-            Clear
           </button>
           <QuestionMarkCircleIcon
             class="h-4 w-4 cursor-pointer"
@@ -65,10 +57,10 @@
         </div>
       </div>
     </div>
-    <div class="need-blur">
+    <div class="card-body need-blur gap-0! p-0!">
       <div class="px-4 py-4">
         <div
-          class="stats stats-vertical sm:stats-horizontal border-base-content/8 bg-base-200/70 w-full gap-2 rounded-3xl border shadow-sm max-md:grid max-md:grid-cols-2"
+          class="stats stats-vertical sm:stats-horizontal bg-base-200 w-full gap-2 shadow max-md:grid max-md:grid-cols-2"
         >
           <div class="stat">
             <div class="stat-title text-xs">{{ aggregateSourceLabel }}</div>
@@ -98,17 +90,11 @@
     </div>
     <div
       ref="parentRef"
-      class="h-96 overflow-auto px-4 pb-4"
+      class="h-96 overflow-auto"
       @touchstart.passive.stop
       @touchmove.passive.stop
       @touchend.passive.stop
     >
-      <div
-        v-if="rows.length === 0"
-        class="zb-empty-state my-4"
-      >
-        No historical connections have been recorded yet.
-      </div>
       <div :style="{ height: `${totalSize}px` }">
         <table class="table-sm table-zebra table w-full rounded-none">
           <thead class="bg-base-200 sticky top-0 z-10">

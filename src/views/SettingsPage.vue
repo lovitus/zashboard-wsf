@@ -4,54 +4,34 @@
     ref="scrollContainerRef"
     @scroll.passive="handleScroll"
   >
+    <!-- 左侧菜单 -->
     <SettingsMenu
+      ref="menuComponentRef"
       :menu-items="menuItems"
       :active-menu-key="activeMenuKey"
       @menu-click="handleMenuClick"
     />
-
+    <!-- 右侧内容区域 -->
     <div
-      class="grid grid-cols-1 gap-4 p-2"
+      class="grid grid-cols-1 gap-2 p-2"
       :style="padding"
     >
-      <PageHeader
-        :title="$t('settings')"
-        subtitle="Manage built-in UI behavior, runtime controls, and data presentation without changing your backend workflow."
-        :icon="routeMeta.icon"
-        eyebrow="Preferences workspace"
-      >
-        <template #meta>
-          <StatusChip
-            :label="`${menuItems.length} sections`"
-            tone="neutral"
-          />
-          <StatusChip
-            :label="$t(activeMenuKey)"
-            tone="info"
-          />
-        </template>
-      </PageHeader>
-
       <div class="flex flex-col gap-4">
-        <SectionCard
+        <div
           v-for="item in menuItems"
           :key="item.key"
           :id="`item-${item.key}`"
           :data-key="item.key"
-          :title="$t(item.label)"
-          :subtitle="item.description"
+          class="card"
         >
           <component :is="item.component" />
-        </SectionCard>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import PageHeader from '@/components/layout/PageHeader.vue'
-import SectionCard from '@/components/layout/SectionCard.vue'
-import StatusChip from '@/components/layout/StatusChip.vue'
 import BackendSettings from '@/components/settings/BackendSettings.vue'
 import ConnectionsSettings from '@/components/settings/ConnectionsSettings.vue'
 import GeneralSettings from '@/components/settings/GeneralSettings.vue'
@@ -59,8 +39,7 @@ import OverviewSettings from '@/components/settings/OverviewSettings.vue'
 import ProxiesSettings from '@/components/settings/ProxiesSettings.vue'
 import SettingsMenu from '@/components/settings/SettingsMenu.vue'
 import { usePaddingForViews } from '@/composables/paddingViews'
-import { ROUTE_NAME, SETTINGS_MENU_KEY } from '@/constant'
-import { BUILTIN_ROUTE_META, SETTINGS_SECTION_META } from '@/constant/ui'
+import { SETTINGS_MENU_KEY } from '@/constant'
 import { hiddenSettingsItems, settingsMenuOrder } from '@/store/settings'
 import {
   ArrowsRightLeftIcon,
@@ -79,13 +58,12 @@ type MenuItem = {
   label: string
   icon: Component
   component: Component
-  description: string
 }
 
 const { padding } = usePaddingForViews()
 const route = useRoute()
-const routeMeta = BUILTIN_ROUTE_META[ROUTE_NAME.settings]
 
+const menuComponentRef = ref<InstanceType<typeof SettingsMenu> | null>(null)
 const scrollContainerRef = ref<HTMLDivElement>()
 const menuItems = computed<MenuItem[]>(() => {
   const itemsMap = new Map<SETTINGS_MENU_KEY, MenuItem>([
@@ -96,7 +74,6 @@ const menuItems = computed<MenuItem[]>(() => {
         label: 'zashboardSettings',
         icon: HomeIcon,
         component: GeneralSettings,
-        description: SETTINGS_SECTION_META[SETTINGS_MENU_KEY.general].subtitle,
       },
     ],
     [
@@ -106,7 +83,6 @@ const menuItems = computed<MenuItem[]>(() => {
         label: 'overviewSettings',
         icon: CubeTransparentIcon,
         component: OverviewSettings,
-        description: SETTINGS_SECTION_META[SETTINGS_MENU_KEY.overview].subtitle,
       },
     ],
     [
@@ -116,7 +92,6 @@ const menuItems = computed<MenuItem[]>(() => {
         label: 'backendSettings',
         icon: ServerIcon,
         component: BackendSettings,
-        description: SETTINGS_SECTION_META[SETTINGS_MENU_KEY.backend].subtitle,
       },
     ],
     [
@@ -126,7 +101,6 @@ const menuItems = computed<MenuItem[]>(() => {
         label: 'proxySettings',
         icon: GlobeAltIcon,
         component: ProxiesSettings,
-        description: SETTINGS_SECTION_META[SETTINGS_MENU_KEY.proxies].subtitle,
       },
     ],
     [
@@ -136,27 +110,32 @@ const menuItems = computed<MenuItem[]>(() => {
         label: 'connectionSettings',
         icon: ArrowsRightLeftIcon,
         component: ConnectionsSettings,
-        description: SETTINGS_SECTION_META[SETTINGS_MENU_KEY.connections].subtitle,
       },
     ],
   ])
 
+  // 根据 settingsMenuOrder 排序，并过滤隐藏的项
   return settingsMenuOrder.value
     .map((key) => itemsMap.get(key))
     .filter((item): item is MenuItem => item !== undefined && !hiddenSettingsItems.value[item.key])
 })
 const activeMenuKey = ref<SETTINGS_MENU_KEY>(menuItems.value[0]?.key || SETTINGS_MENU_KEY.general)
 
+// 当 menuItems 变化时，如果当前激活的项被隐藏，则切换到第一个可见项
 watch(
   menuItems,
   (newItems) => {
-    if (newItems.length > 0 && !newItems.find((item) => item.key === activeMenuKey.value)) {
-      activeMenuKey.value = newItems[0].key
+    if (newItems.length > 0) {
+      if (!newItems.find((item) => item.key === activeMenuKey.value)) {
+        activeMenuKey.value = newItems[0].key
+      }
+    } else {
+      // 如果所有设置项都被隐藏，保持当前值（虽然不会显示）
+      // 这种情况应该很少见，因为至少应该有一个设置项可见
     }
   },
   { immediate: true },
 )
-
 const getItemRef = (key: SETTINGS_MENU_KEY) => {
   return document.getElementById(`item-${key}`)
 }
@@ -179,7 +158,7 @@ const handleMenuClick = (key: SETTINGS_MENU_KEY) => {
       const containerRect = scrollContainerRef.value.getBoundingClientRect()
       const elementRect = element.getBoundingClientRect()
       const scrollTop = scrollContainerRef.value.scrollTop
-      const targetScrollTop = scrollTop + elementRect.top - containerRect.top - 104
+      const targetScrollTop = scrollTop + elementRect.top - containerRect.top - 86
 
       scrollContainerRef.value.scrollTo({
         top: targetScrollTop,
@@ -196,7 +175,7 @@ const updateActiveMenuByScroll = () => {
   const containerRect = scrollContainerRef.value.getBoundingClientRect()
   const newScrollTop = scrollContainerRef.value.scrollTop
   const containerCenter =
-    containerRect.top + containerRect.height * (newScrollTop > scrollTop.value ? 0.7 : 0.28)
+    containerRect.top + containerRect.height * (newScrollTop > scrollTop.value ? 0.8 : 0.3)
 
   let minDistance = Infinity
   let closestKey: SETTINGS_MENU_KEY | null = null
@@ -215,6 +194,7 @@ const updateActiveMenuByScroll = () => {
     }
   })
 
+  // 如果找到了最近的元素，更新激活菜单
   if (closestKey && closestKey !== activeMenuKey.value) {
     activeMenuKey.value = closestKey
   }

@@ -4,51 +4,43 @@
     :title="$t('connectionDetails')"
     :box-class="proxyChainStart ? `max-w-256` : `max-w-128`"
   >
-    <div class="flex flex-col gap-4 md:flex-row">
-      <div class="flex min-w-0 flex-1 flex-col gap-4 md:w-128">
-        <div class="border-base-content/8 bg-base-200/45 rounded-[var(--zb-radius-lg)] border p-4">
-          <div class="mb-3 text-sm font-semibold">Connection payload</div>
-          <VueJsonPretty
-            :data="infoConn"
-            class="max-h-[60dvh] overflow-y-auto"
-          >
-            <template #renderNodeValue="{ node, defaultValue }">
-              <template v-if="node.path.startsWith('root.chains') && proxyMap[node.content]?.icon">
-                <span
-                  >"<ProxyIcon
-                    :icon="proxyMap[node.content].icon"
-                    class="inline-block"
-                    :margin="0"
-                  />
-                  {{ node.content }}"
-                </span>
-              </template>
-              <template v-else>
-                {{ defaultValue }}
-              </template>
-            </template>
-          </VueJsonPretty>
-        </div>
-
-        <div
-          v-if="destinationIP"
-          class="border-base-content/8 bg-base-200/45 rounded-[var(--zb-radius-lg)] border p-4 text-sm"
+    <div class="flex flex-col md:flex-row">
+      <div class="md:w-128">
+        <VueJsonPretty
+          :data="infoConn"
+          class="overflow-y-auto"
         >
-          <div class="mb-2 font-semibold">Destination insight</div>
-          <template v-if="isPrivateIP">
-            <div class="text-base-content/60">
-              Destination IP is private or loopback, so public geolocation data is not shown.
-            </div>
+          <template #renderNodeValue="{ node, defaultValue }">
+            <template v-if="node.path.startsWith('root.chains') && proxyMap[node.content]?.icon">
+              <span
+                >"<ProxyIcon
+                  :icon="proxyMap[node.content].icon"
+                  class="inline-block"
+                  :margin="0"
+                />
+                {{ node.content }}"
+              </span>
+            </template>
+            <template v-else>
+              {{ defaultValue }}
+            </template>
           </template>
-          <template v-else-if="details">
+        </VueJsonPretty>
+        <div
+          class="min-h-12 shrink-0 pt-2 text-sm"
+          v-if="destinationIP && !isPrivateIP"
+        >
+          <template v-if="details">
             <div class="flex flex-wrap items-center gap-1">
               <ArrowRightCircleIcon class="h-4 w-4 shrink-0" />
-              <div>{{ details?.ip }}</div>
+              <div>
+                {{ details?.ip }}
+              </div>
               <div>( AS{{ details?.asn }} )</div>
             </div>
-            <div class="mt-2 flex flex-wrap gap-3">
+            <div class="flex flex-wrap">
               <div
-                class="flex items-center gap-1"
+                class="mr-3 flex items-center gap-1"
                 v-if="details?.country"
               >
                 <MapPinIcon class="h-4 w-4 shrink-0" />
@@ -66,16 +58,11 @@
               </div>
             </div>
           </template>
-          <template v-else>
-            <div class="text-base-content/60">Loading destination information...</div>
-          </template>
         </div>
       </div>
       <template v-if="proxyChainStart">
-        <div
-          class="border-base-content/8 bg-base-200/45 min-w-0 rounded-[var(--zb-radius-lg)] border p-4 md:w-128"
-        >
-          <div class="mb-3 text-sm font-semibold">Proxy chain</div>
+        <div class="divider md:divider-horizontal m-0"></div>
+        <div class="md:w-128">
           <ProxyChains :name="proxyChainStart" />
         </div>
       </template>

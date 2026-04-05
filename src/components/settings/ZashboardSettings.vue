@@ -4,256 +4,226 @@
     v-if="hasVisibleItems"
     class="relative flex flex-col gap-2 p-4 text-sm"
   >
-    <div class="settings-block">
-      <div class="settings-block-header">
-        <div class="settings-title">
-          <div class="indicator">
+    <div class="settings-title">
+      <div class="indicator">
+        <span
+          v-if="isUIUpdateAvailable"
+          class="indicator-item top-1 -right-1 flex"
+        >
+          <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
+          <span class="bg-secondary h-2 w-2 rounded-full"></span>
+        </span>
+        <a
+          href="https://github.com/Zephyruso/zashboard"
+          target="_blank"
+        >
+          <span> zashboard </span>
+          <span class="text-sm font-normal">
+            {{ zashboardVersion }}
             <span
-              v-if="isUIUpdateAvailable"
-              class="indicator-item top-1 -right-1 flex"
+              v-if="commitId"
+              class="text-xs"
             >
-              <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
-              <span class="bg-secondary h-2 w-2 rounded-full"></span>
+              {{ commitId }}
             </span>
-            <a
-              href="https://github.com/Zephyruso/zashboard"
-              target="_blank"
-            >
-              <span> zashboard </span>
-              <span class="text-sm font-normal">
-                {{ zashboardVersion }}
-                <span
-                  v-if="commitId"
-                  class="text-xs"
-                >
-                  {{ commitId }}
-                </span>
-              </span>
-            </a>
-          </div>
-          <button
-            class="btn btn-sm absolute top-2 right-2"
-            @click="refreshPages"
-            v-if="isPWA"
-          >
-            {{ $t('refresh') }}
-            <ArrowPathIcon class="h-4 w-4" />
-          </button>
-        </div>
-        <div class="settings-block-description">
-          Built-in appearance, theme behavior, and settings portability for this dashboard shell.
-        </div>
+          </span>
+        </a>
       </div>
-      <div class="settings-grid">
-        <LanguageSelect
-          v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.language`]"
-        />
-        <div
-          v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.fonts`]"
-          class="setting-item"
-        >
-          <div class="setting-item-label">
-            <div>{{ $t('fonts') }}</div>
-            <div class="setting-item-note">
-              Choose the primary font family used by the built-in UI.
-            </div>
-          </div>
-          <select
-            class="select select-sm w-48"
-            v-model="font"
-          >
-            <option
-              v-for="opt in fontOptions"
-              :key="opt"
-              :value="opt"
-            >
-              {{ opt }}
-            </option>
-          </select>
+      <button
+        class="btn btn-sm absolute top-2 right-2"
+        @click="refreshPages"
+        v-if="isPWA"
+      >
+        {{ $t('refresh') }}
+        <ArrowPathIcon class="h-4 w-4" />
+      </button>
+    </div>
+    <div class="settings-grid">
+      <LanguageSelect
+        v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.language`]"
+      />
+      <div
+        v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.fonts`]"
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('fonts') }}
         </div>
-        <div
-          v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.emoji`]"
-          class="setting-item"
+        <select
+          class="select select-sm w-48"
+          v-model="font"
         >
-          <div class="setting-item-label">
-            <div>Emoji</div>
-            <div class="setting-item-note">Switch between bundled emoji rendering options.</div>
-          </div>
-          <select
-            class="select select-sm w-48"
-            v-model="emoji"
+          <option
+            v-for="opt in fontOptions"
+            :key="opt"
+            :value="opt"
           >
-            <option
-              v-for="opt in Object.values(EMOJIS)"
-              :key="opt"
-              :value="opt"
-            >
-              {{ opt }}
-            </option>
-          </select>
-        </div>
-        <div
-          v-if="
-            !hiddenSettingsItems[
-              `${SETTINGS_MENU_KEY.general}.zashboardSettings.customBackgroundURL`
-            ]
-          "
-          class="setting-item"
+            {{ opt }}
+          </option>
+        </select>
+      </div>
+      <div
+        v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.emoji`]"
+        class="setting-item"
+      >
+        <div class="setting-item-label">Emoji</div>
+        <select
+          class="select select-sm w-48"
+          v-model="emoji"
         >
-          <div class="setting-item-label">
-            <div>{{ $t('customBackgroundURL') }}</div>
-            <div class="setting-item-note">
-              Use a remote image or upload a local background for the built-in shell.
-            </div>
-          </div>
-          <div class="join">
-            <TextInput
-              class="join-item w-38"
-              v-model="customBackgroundURL"
-              :clearable="true"
-              @update:modelValue="handlerBackgroundURLChange"
-            />
-            <button
-              class="btn join-item btn-sm"
-              @click="handlerClickUpload"
-            >
-              <ArrowUpTrayIcon class="h-4 w-4" />
-            </button>
-          </div>
+          <option
+            v-for="opt in Object.values(EMOJIS)"
+            :key="opt"
+            :value="opt"
+          >
+            {{ opt }}
+          </option>
+        </select>
+      </div>
+      <div
+        v-if="
+          !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.customBackgroundURL`]
+        "
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('customBackgroundURL') }}
+        </div>
+        <div class="join">
+          <TextInput
+            class="join-item w-38"
+            v-model="customBackgroundURL"
+            :clearable="true"
+            @update:modelValue="handlerBackgroundURLChange"
+          />
           <button
-            class="btn btn-circle join-item btn-sm"
-            v-if="customBackgroundURL"
-            @click="displayBgProperty = !displayBgProperty"
+            class="btn join-item btn-sm"
+            @click="handlerClickUpload"
           >
-            <AdjustmentsHorizontalIcon class="h-4 w-4" />
+            <ArrowUpTrayIcon class="h-4 w-4" />
           </button>
-          <input
-            ref="inputFileRef"
-            type="file"
-            accept="image/*"
-            class="hidden"
-            @change="handlerFileChange"
-          />
         </div>
-        <template
-          v-if="
-            customBackgroundURL &&
-            displayBgProperty &&
-            !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.transparent`]
-          "
+        <button
+          class="btn btn-circle join-item btn-sm"
+          v-if="customBackgroundURL"
+          @click="displayBgProperty = !displayBgProperty"
         >
-          <div class="setting-item">
-            <div class="setting-item-label">
-              {{ $t('transparent') }}
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              v-model="dashboardTransparent"
-              class="range max-w-64"
-              @touchstart.passive.stop
-              @touchmove.passive.stop
-              @touchend.passive.stop
-            />
-          </div>
-        </template>
-        <template
-          v-if="
-            customBackgroundURL &&
-            displayBgProperty &&
-            !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.blurIntensity`]
-          "
-        >
-          <div class="setting-item">
-            <div class="setting-item-label">
-              {{ $t('blurIntensity') }}
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="40"
-              v-model="blurIntensity"
-              class="range max-w-64"
-              @touchstart.stop
-              @touchmove.stop
-              @touchend.stop
-            />
-          </div>
-        </template>
-        <div
-          v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.defaultTheme`]"
-          class="setting-item"
-        >
+          <AdjustmentsHorizontalIcon class="h-4 w-4" />
+        </button>
+        <input
+          ref="inputFileRef"
+          type="file"
+          accept="image/*"
+          class="hidden"
+          @change="handlerFileChange"
+        />
+      </div>
+      <template
+        v-if="
+          customBackgroundURL &&
+          displayBgProperty &&
+          !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.transparent`]
+        "
+      >
+        <div class="setting-item">
           <div class="setting-item-label">
-            <div>{{ $t('defaultTheme') }}</div>
-            <div class="setting-item-note">
-              Pick the primary theme used when auto theme switching is off.
-            </div>
-          </div>
-          <div class="join">
-            <ThemeSelector
-              class="w-38!"
-              v-model:value="defaultTheme"
-            />
-            <button
-              class="btn btn-sm join-item"
-              @click="customThemeModal = !customThemeModal"
-            >
-              <PlusIcon class="h-4 w-4" />
-            </button>
-          </div>
-          <CustomTheme v-model:value="customThemeModal" />
-        </div>
-        <div
-          v-if="
-            autoTheme &&
-            !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.darkTheme`]
-          "
-          class="setting-item"
-        >
-          <div class="setting-item-label">
-            <div>{{ $t('darkTheme') }}</div>
-            <div class="setting-item-note">
-              Theme used when system preference switches to dark mode.
-            </div>
-          </div>
-          <ThemeSelector v-model:value="darkTheme" />
-        </div>
-        <div
-          v-if="
-            !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.autoSwitchTheme`]
-          "
-          class="setting-item"
-        >
-          <div class="setting-item-label">
-            <div>{{ $t('autoSwitchTheme') }}</div>
-            <div class="setting-item-note">
-              Follow the system appearance automatically when supported.
-            </div>
+            {{ $t('transparent') }}
           </div>
           <input
-            type="checkbox"
-            v-model="autoTheme"
-            class="toggle"
+            type="range"
+            min="0"
+            max="100"
+            v-model="dashboardTransparent"
+            class="range max-w-64"
+            @touchstart.passive.stop
+            @touchmove.passive.stop
+            @touchend.passive.stop
           />
         </div>
-        <div
-          v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.autoUpgrade`]"
-          class="setting-item"
-        >
+      </template>
+      <template
+        v-if="
+          customBackgroundURL &&
+          displayBgProperty &&
+          !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.blurIntensity`]
+        "
+      >
+        <div class="setting-item">
           <div class="setting-item-label">
-            <div>{{ $t('autoUpgrade') }}</div>
-            <div class="setting-item-note">
-              Apply built-in UI upgrades automatically when they become available.
-            </div>
+            {{ $t('blurIntensity') }}
           </div>
           <input
-            class="toggle"
-            type="checkbox"
-            v-model="autoUpgrade"
+            type="range"
+            min="0"
+            max="40"
+            v-model="blurIntensity"
+            class="range max-w-64"
+            @touchstart.stop
+            @touchmove.stop
+            @touchend.stop
           />
         </div>
+      </template>
+      <div
+        v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.defaultTheme`]"
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('defaultTheme') }}
+        </div>
+        <div class="join">
+          <ThemeSelector
+            class="w-38!"
+            v-model:value="defaultTheme"
+          />
+          <button
+            class="btn btn-sm join-item"
+            @click="customThemeModal = !customThemeModal"
+          >
+            <PlusIcon class="h-4 w-4" />
+          </button>
+        </div>
+        <CustomTheme v-model:value="customThemeModal" />
+      </div>
+      <div
+        v-if="
+          autoTheme &&
+          !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.darkTheme`]
+        "
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('darkTheme') }}
+        </div>
+        <ThemeSelector v-model:value="darkTheme" />
+      </div>
+      <div
+        v-if="
+          !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.autoSwitchTheme`]
+        "
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('autoSwitchTheme') }}
+        </div>
+        <input
+          type="checkbox"
+          v-model="autoTheme"
+          class="toggle"
+        />
+      </div>
+      <div
+        v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.autoUpgrade`]"
+        class="setting-item"
+      >
+        <div class="setting-item-label">
+          {{ $t('autoUpgrade') }}
+        </div>
+        <input
+          class="toggle"
+          type="checkbox"
+          v-model="autoUpgrade"
+        />
       </div>
     </div>
     <div
@@ -262,7 +232,7 @@
         !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.exportSettings`] ||
         !hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.importSettings`]
       "
-      class="settings-block mt-0 grid max-w-3xl grid-cols-2 gap-2 gap-y-3 md:grid-cols-4"
+      class="mt-4 grid max-w-3xl grid-cols-2 gap-2 gap-y-3 md:grid-cols-4"
     >
       <button
         v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.general}.zashboardSettings.upgradeUI`]"

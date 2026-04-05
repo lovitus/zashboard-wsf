@@ -1,7 +1,5 @@
 <template>
-  <div
-    class="bg-base-200/25 relative h-32 w-full overflow-hidden rounded-[calc(var(--zb-radius-lg)-0.35rem)] px-2 pt-2"
-  >
+  <div class="relative h-28 w-full overflow-hidden">
     <div
       ref="chart"
       class="h-full w-full"
@@ -11,7 +9,7 @@
       ref="colorRef"
     />
     <button
-      class="btn btn-ghost btn-xs absolute right-2 bottom-1"
+      class="btn btn-ghost btn-xs absolute right-1 bottom-0"
       @click="isPaused = !isPaused"
     >
       <component
@@ -19,12 +17,6 @@
         class="h-4 w-4"
       />
     </button>
-    <div
-      v-if="isPaused"
-      class="border-base-content/10 bg-base-100/80 pointer-events-none absolute top-2 right-2 rounded-full border px-2 py-1 text-[10px] font-medium tracking-wide uppercase"
-    >
-      Paused
-    </div>
   </div>
 </template>
 

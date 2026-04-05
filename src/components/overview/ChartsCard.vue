@@ -1,16 +1,10 @@
 <template>
-  <SectionCard
-    title="Realtime throughput"
-    subtitle="Core counters and traffic charts for the currently selected backend."
-    body-class="gap-4"
-  >
-    <template #actions>
-      <StatusChip
-        :label="$t('overview')"
-        tone="info"
-      />
-    </template>
-    <div class="grid gap-4">
+  <!-- overview -->
+  <div class="card w-full">
+    <div class="card-title px-4 pt-4">
+      {{ $t('overview') }}
+    </div>
+    <div class="card-body gap-4">
       <StatisticsStats type="overview" />
       <div class="grid grid-cols-1 gap-2 lg:grid-cols-3">
         <SpeedCharts class="xl:h-64" />
@@ -18,12 +12,10 @@
         <ConnectionsCharts class="xl:h-64" />
       </div>
     </div>
-  </SectionCard>
+  </div>
 </template>
 
 <script setup lang="ts">
-import SectionCard from '@/components/layout/SectionCard.vue'
-import StatusChip from '@/components/layout/StatusChip.vue'
 import ConnectionsCharts from '@/components/overview/ConnectionsCharts.vue'
 import MemoryCharts from '@/components/overview/MemoryCharts.vue'
 import SpeedCharts from '@/components/overview/SpeedCharts.vue'

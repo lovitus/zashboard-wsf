@@ -1,10 +1,8 @@
 <template>
-  <div
-    class="border-base-content/8 bg-base-100/70 hover:bg-base-200/70 w-full rounded-2xl border p-3 text-sm shadow-sm transition-colors"
-  >
+  <div class="card hover:bg-base-200 w-full gap-2 p-2 text-sm">
     <div class="flex h-6 items-center gap-2 leading-6">
       <span>{{ index }}.</span>
-      <span class="text-main font-medium">{{ ruleProvider.name }}</span>
+      <span class="text-main">{{ ruleProvider.name }}</span>
       <span class="text-base-content/80 text-xs"> ({{ ruleProvider.ruleCount }}) </span>
       <button
         v-if="ruleProvider.vehicleType !== 'Inline'"

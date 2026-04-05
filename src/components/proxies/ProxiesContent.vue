@@ -19,26 +19,14 @@ const proxies = computed(() => props.renderProxies.slice(0, maxProxies.value))
 </script>
 
 <template>
-  <div class="space-y-3">
-    <div class="flex items-center justify-between gap-3 px-1">
-      <div class="text-sm font-medium">Available nodes</div>
-      <div class="zb-subtle-text text-xs">{{ proxies.length }} visible</div>
-    </div>
-    <ProxyNodeGrid v-if="proxies.length">
-      <ProxyNodeCard
-        v-for="node in proxies"
-        :key="node"
-        :name="node"
-        :group-name="name"
-        :active="node === now"
-        @click.stop="handlerProxySelect(name, node)"
-      />
-    </ProxyNodeGrid>
-    <div
-      v-else
-      class="zb-empty-state"
-    >
-      No proxies available in this group.
-    </div>
-  </div>
+  <ProxyNodeGrid>
+    <ProxyNodeCard
+      v-for="node in proxies"
+      :key="node"
+      :name="node"
+      :group-name="name"
+      :active="node === now"
+      @click.stop="handlerProxySelect(name, node)"
+    />
+  </ProxyNodeGrid>
 </template>

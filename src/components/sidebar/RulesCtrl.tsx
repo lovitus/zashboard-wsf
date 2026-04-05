@@ -1,9 +1,6 @@
 import { updateRuleProviderAPI } from '@/api'
-import ActionGroup from '@/components/layout/ActionGroup.vue'
-import StatusChip from '@/components/layout/StatusChip.vue'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
-import { ROUTE_NAME, RULE_TAB_TYPE } from '@/constant'
-import { BUILTIN_ROUTE_META } from '@/constant/ui'
+import { RULE_TAB_TYPE } from '@/constant'
 import { showNotification } from '@/helper/notification'
 import { fetchRules, ruleProviderList, rules, rulesFilter, rulesTabShow } from '@/store/rules'
 import {
@@ -71,14 +68,6 @@ export default defineComponent({
     })
 
     return () => {
-      const routeMeta = BUILTIN_ROUTE_META[ROUTE_NAME.rules]
-      const titleBlock = (
-        <div class="min-w-0 flex-1">
-          <div class="text-base-content text-sm font-semibold">{t(routeMeta.titleKey)}</div>
-          <div class="text-base-content/55 truncate text-xs">{routeMeta.subtitle}</div>
-        </div>
-      )
-
       const tabs = (
         <div
           role="tablist"
@@ -100,11 +89,10 @@ export default defineComponent({
       )
       const upgradeAllIcon = rulesTabShow.value === RULE_TAB_TYPE.PROVIDER && (
         <button
-          class="btn btn-sm btn-outline"
+          class="btn btn-circle btn-sm"
           onClick={handlerClickUpgradeAllProviders}
         >
           <ArrowPathIcon class={['h-4 w-4', isUpgrading.value && 'animate-spin']} />
-          <span class="max-md:hidden">{t('refresh')}</span>
         </button>
       )
 
@@ -120,11 +108,10 @@ export default defineComponent({
       const settingsModal = (
         <>
           <button
-            class={'btn btn-sm btn-outline'}
+            class={'btn btn-circle btn-sm'}
             onClick={() => (settingsModel.value = true)}
           >
             <WrenchScrewdriverIcon class="h-4 w-4" />
-            <span class="max-md:hidden">{t('moreSettings')}</span>
           </button>
           <DialogWrapper
             v-model={settingsModel.value}
@@ -161,43 +148,25 @@ export default defineComponent({
       )
 
       const content = !isLargeCtrlsBar.value ? (
-        <div class="zb-toolbar-grid">
-          <div class="zb-toolbar-main">
-            {titleBlock}
-            <StatusChip
-              label={
-                rulesTabShow.value === RULE_TAB_TYPE.RULES
-                  ? `${rules.value.length} rules`
-                  : `${ruleProviderList.value.length} providers`
-              }
-              tone="info"
-            />
-          </div>
-          <ActionGroup label="Context">{hasProviders.value && tabs}</ActionGroup>
-          <ActionGroup label="Search">{searchInput}</ActionGroup>
-          <ActionGroup label="Actions">
-            {upgradeAllIcon}
+        <div class="flex flex-col gap-2 p-2">
+          {hasProviders.value && (
+            <div class="flex gap-2">
+              {tabs}
+              {upgradeAllIcon}
+            </div>
+          )}
+          <div class="flex w-full gap-2">
+            {searchInput}
             {settingsModal}
-          </ActionGroup>
+          </div>
         </div>
       ) : (
-        <div class="zb-toolbar-grid">
-          <div class="zb-toolbar-main">
-            {titleBlock}
-            <ActionGroup label="Context">{hasProviders.value && tabs}</ActionGroup>
-            <div class="zb-toolbar-fill">
-              <ActionGroup
-                label="Search"
-                class="w-full"
-              >
-                <div class="zb-toolbar-search">{searchInput}</div>
-              </ActionGroup>
-            </div>
-            <ActionGroup label="Actions">
-              {upgradeAllIcon}
-              {settingsModal}
-            </ActionGroup>
-          </div>
+        <div class="flex flex-wrap gap-2 p-2">
+          {hasProviders.value && tabs}
+          {searchInput}
+          <div class="flex-1"></div>
+          {upgradeAllIcon}
+          {settingsModal}
         </div>
       )
 

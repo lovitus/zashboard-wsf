@@ -1,347 +1,187 @@
 <template>
   <div
     class="bg-base-200/50 h-full w-full overflow-auto"
-    @keydown.enter="handlePageEnter"
+    @keydown.enter="handleSubmit(form)"
   >
-    <div class="mx-auto flex min-h-full max-w-7xl flex-col gap-4 p-4">
-      <PageHeader
-        :title="$t('setup')"
-        :subtitle="routeMeta.subtitle"
-        :icon="routeMeta.icon"
-        eyebrow="Built-in control center"
-      >
-        <template #meta>
-          <StatusChip
-            label="Built-in UI"
-            tone="info"
+    <div class="absolute top-4 right-4 max-sm:hidden">
+      <ImportSettings />
+    </div>
+    <div class="absolute right-4 bottom-4 max-sm:hidden">
+      <LanguageSelect />
+    </div>
+    <div
+      class="mx-auto flex min-h-full w-96 max-w-[90%] flex-col items-stretch justify-center gap-4 py-4"
+    >
+      <div class="card gap-3 px-6 py-2">
+        <h1 class="text-2xl font-semibold">{{ $t('setup') }}</h1>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('protocol') }}</span>
+          </label>
+          <select
+            class="select select-sm w-full"
+            v-model="form.protocol"
+          >
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('host') }}</span>
+          </label>
+          <TextInput
+            class="w-full"
+            name="username"
+            autocomplete="username"
+            v-model="form.host"
           />
-          <StatusChip
-            :label="isTauriApp ? 'Tauri runtime' : 'Web runtime'"
-            :tone="isTauriApp ? 'success' : 'neutral'"
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('port') }}</span>
+          </label>
+          <TextInput
+            class="w-full"
+            v-model="form.port"
           />
-          <StatusChip
-            :label="`${backendList.length} backend${backendList.length === 1 ? '' : 's'}`"
-            tone="neutral"
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="flex items-center gap-1 text-sm">
+            <span>{{ $t('secondaryPath') }} ({{ $t('optional') }})</span>
+            <span
+              class="tooltip"
+              :data-tip="$t('secondaryPathTip')"
+            >
+              <QuestionMarkCircleIcon class="h-4 w-4" />
+            </span>
+          </label>
+          <TextInput
+            class="w-full"
+            v-model="form.secondaryPath"
           />
-        </template>
-        <template #actions>
-          <ImportSettings />
-          <LanguageSelect />
-        </template>
-      </PageHeader>
-
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-        <SectionCard
-          title="Quick backend access"
-          subtitle="Connect a Mihomo backend, validate the endpoint, and jump straight into the built-in dashboard."
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('password') }}</span>
+          </label>
+          <input
+            type="password"
+            class="input input-sm w-full"
+            v-model="form.password"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm">
+            <span>{{ $t('label') }} ({{ $t('optional') }})</span>
+          </label>
+          <TextInput
+            class="w-full"
+            v-model="form.label"
+          />
+        </div>
+        <button
+          class="btn btn-primary btn-sm w-full"
+          @click="handleSubmit(form)"
         >
-          <div
-            v-if="submitError"
-            class="bg-error/10 text-error border-error/20 mb-4 rounded-2xl border px-4 py-3 text-sm"
-          >
-            {{ submitError }}
-          </div>
-
-          <div class="grid gap-4 lg:grid-cols-2">
-            <div class="space-y-3">
-              <div>
-                <div class="mb-2 text-sm font-semibold">Connection</div>
-                <div class="grid gap-3">
-                  <label class="flex flex-col gap-1">
-                    <span class="text-sm">{{ $t('protocol') }}</span>
-                    <select
-                      class="select select-sm w-full"
-                      v-model="form.protocol"
-                    >
-                      <option value="http">HTTP</option>
-                      <option value="https">HTTPS</option>
-                    </select>
-                  </label>
-                  <label class="flex flex-col gap-1">
-                    <span class="text-sm">{{ $t('host') }}</span>
-                    <TextInput
-                      class="w-full"
-                      name="username"
-                      autocomplete="username"
-                      v-model="form.host"
-                    />
-                    <span
-                      v-if="fieldErrors.host"
-                      class="text-error text-xs"
-                    >
-                      {{ fieldErrors.host }}
-                    </span>
-                  </label>
-                  <label class="flex flex-col gap-1">
-                    <span class="text-sm">{{ $t('port') }}</span>
-                    <TextInput
-                      class="w-full"
-                      v-model="form.port"
-                    />
-                    <span
-                      v-if="fieldErrors.port"
-                      class="text-error text-xs"
-                    >
-                      {{ fieldErrors.port }}
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <div class="mb-2 text-sm font-semibold">Authentication</div>
-                <label class="flex flex-col gap-1">
-                  <span class="text-sm">{{ $t('password') }}</span>
-                  <input
-                    type="password"
-                    class="input input-sm w-full"
-                    v-model="form.password"
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div class="space-y-3">
-              <div>
-                <div class="mb-2 text-sm font-semibold">Identity</div>
-                <label class="flex flex-col gap-1">
-                  <span class="text-sm">{{ $t('label') }} ({{ $t('optional') }})</span>
-                  <TextInput
-                    class="w-full"
-                    v-model="form.label"
-                  />
-                </label>
-              </div>
-
-              <details class="border-base-content/8 bg-base-200/45 rounded-2xl border p-3">
-                <summary class="cursor-pointer text-sm font-semibold">Advanced options</summary>
-                <div class="mt-3 grid gap-3">
-                  <label class="flex flex-col gap-1">
-                    <span class="flex items-center gap-1 text-sm">
-                      <span>{{ $t('secondaryPath') }} ({{ $t('optional') }})</span>
-                      <span
-                        class="tooltip"
-                        :data-tip="$t('secondaryPathTip')"
-                      >
-                        <QuestionMarkCircleIcon class="h-4 w-4" />
-                      </span>
-                    </span>
-                    <TextInput
-                      class="w-full"
-                      v-model="form.secondaryPath"
-                    />
-                  </label>
-                </div>
-              </details>
-
-              <div class="zb-panel-inset space-y-2 p-3">
-                <div class="text-sm font-semibold">Current mode</div>
-                <div class="zb-subtle-text text-sm leading-6">
-                  Built-in UI remains the safe control plane for backend setup, native tools, and
-                  upstream UI switching.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              class="btn btn-primary btn-sm min-w-36"
-              :disabled="submitting"
-              @click="handleSubmit(form)"
-            >
-              <span
-                v-if="submitting"
-                class="loading loading-spinner loading-sm"
-              ></span>
-              {{ submitting ? 'Connecting...' : $t('submit') }}
-            </button>
-            <div class="zb-subtle-text text-sm">
-              The built-in UI validates `/version` before saving the backend.
-            </div>
-          </div>
-        </SectionCard>
-
-        <div class="flex flex-col gap-4">
-          <SectionCard
-            title="Saved backends"
-            subtitle="Choose which backend powers the built-in dashboard, reorder favorites, or edit stored credentials."
-          >
+          {{ $t('submit') }}
+        </button>
+        <Draggable
+          class="flex flex-1 flex-col gap-2"
+          v-model="backendList"
+          group="list"
+          :animation="150"
+          handle=".backend-drag-handle"
+          :delay="isMiddleScreen ? 180 : 0"
+          :delay-on-touch-only="true"
+          :touch-start-threshold="6"
+          :fallback-tolerance="8"
+          :item-key="'uuid'"
+        >
+          <template #item="{ element }">
             <div
-              v-if="backendList.length === 0"
-              class="zb-empty-state"
+              :key="element.uuid"
+              class="flex items-center gap-2"
             >
-              No backends saved yet. Add one on the left to start using the built-in UI.
+              <button class="backend-drag-handle btn btn-circle btn-ghost btn-sm">
+                <ChevronUpDownIcon class="h-4 w-4 cursor-grab" />
+              </button>
+              <button
+                class="backend-action btn btn-sm flex-1"
+                @click="selectBackend(element.uuid)"
+              >
+                {{ getLabelFromBackend(element) }}
+              </button>
+              <button
+                class="backend-action btn btn-circle btn-ghost btn-sm"
+                @click="editBackend(element)"
+              >
+                <PencilIcon class="h-4 w-4" />
+              </button>
+              <button
+                class="backend-action btn btn-circle btn-ghost btn-sm"
+                @click="() => removeBackend(element.uuid)"
+              >
+                <TrashIcon class="h-4 w-4" />
+              </button>
             </div>
-
-            <Draggable
-              v-else
-              class="flex flex-1 flex-col gap-3"
-              v-model="backendList"
-              group="list"
-              :animation="150"
-              handle=".backend-drag-handle"
-              :delay="isMiddleScreen ? 180 : 0"
-              :delay-on-touch-only="true"
-              :touch-start-threshold="6"
-              :fallback-tolerance="8"
-              :item-key="'uuid'"
-            >
-              <template #item="{ element }">
-                <div
-                  :key="element.uuid"
-                  class="border-base-content/8 bg-base-200/50 rounded-2xl border p-3"
-                >
-                  <div class="flex items-start gap-3">
-                    <button class="backend-drag-handle btn btn-ghost btn-sm btn-square mt-1">
-                      <ChevronUpDownIcon class="h-4 w-4 cursor-grab" />
-                    </button>
-                    <div class="min-w-0 flex-1">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <div class="truncate text-sm font-semibold">
-                          {{ element.label || `${element.host}:${element.port}` }}
-                        </div>
-                        <StatusChip
-                          v-if="element.uuid === activeUuid"
-                          label="Active"
-                          tone="success"
-                          dot
-                        />
-                        <StatusChip
-                          :label="element.protocol.toUpperCase()"
-                          tone="neutral"
-                        />
-                      </div>
-                      <div class="text-base-content/55 mt-1 text-xs break-all">
-                        {{ getUrlFromBackend(element) }}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="mt-3 flex flex-wrap gap-2 pl-11">
-                    <button
-                      class="btn btn-primary btn-sm"
-                      @click="selectBackend(element.uuid)"
-                    >
-                      {{ $t('selectBackend') }}
-                    </button>
-                    <button
-                      class="btn btn-sm btn-outline"
-                      @click="editBackend(element)"
-                    >
-                      <PencilIcon class="h-4 w-4" />
-                      {{ $t('editBackend') }}
-                    </button>
-                    <button
-                      class="btn btn-sm btn-outline btn-error"
-                      @click="requestRemoveBackend(element)"
-                    >
-                      <TrashIcon class="h-4 w-4" />
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              </template>
-            </Draggable>
-          </SectionCard>
-
-          <SectionCard
-            muted
-            title="Operational note"
-            subtitle="Custom upstream versions can still open their own UI, but backend management and recovery flows stay anchored here in the built-in interface."
-          >
-            <div class="text-sm leading-6">
-              Use this page whenever you need a safe path back from a custom upstream UI or need to
-              recover backend access after switching versions.
-            </div>
-          </SectionCard>
+          </template>
+        </Draggable>
+        <div class="mt-4 sm:hidden">
+          <LanguageSelect />
+        </div>
+        <div class="absolute top-2 right-2 sm:hidden">
+          <ImportSettings />
         </div>
       </div>
 
+      <!-- Tunnel Management (Tauri only) -->
       <div
         v-if="isTauriApp"
-        class="grid gap-4 xl:grid-cols-3"
+        class="card px-6 py-4"
       >
-        <SectionCard
-          title="Tunnel manager"
-          subtitle="Run local forwarding helpers for backends that live behind SSH or relay hops."
-        >
-          <TunnelManager />
-        </SectionCard>
+        <TunnelManager />
+      </div>
 
-        <SectionCard
-          title="App updates"
-          subtitle="Check native wrapper releases and open the correct download target for this platform."
-        >
-          <AppUpdater />
-        </SectionCard>
+      <!-- App Update Checker (Tauri only) -->
+      <div
+        v-if="isTauriApp"
+        class="card px-6 py-4"
+      >
+        <AppUpdater />
+      </div>
 
-        <SectionCard
-          title="Upstream UI manager"
-          subtitle="Download, activate, or remove upstream dashboard versions while keeping the built-in UI as your control plane."
-        >
-          <UpstreamUIManager />
-        </SectionCard>
+      <!-- Upstream Zashboard UI Manager (Tauri only) -->
+      <div
+        v-if="isTauriApp"
+        class="card px-6 py-4"
+      >
+        <UpstreamUIManager />
       </div>
     </div>
+    <!-- close flex column wrapper -->
 
+    <!-- 编辑Backend Modal -->
     <EditBackendModal
       v-model="showEditModal"
       :default-backend-uuid="editingBackendUuid"
     />
-
-    <DialogWrapper
-      v-model="showDeleteConfirm"
-      title="Remove backend"
-    >
-      <div class="space-y-4">
-        <p class="text-sm leading-6">
-          Remove
-          <span class="font-semibold">{{ backendToDeleteLabel }}</span>
-          from the built-in UI backend list?
-        </p>
-        <div class="flex justify-end gap-2">
-          <button
-            class="btn btn-sm"
-            @click="showDeleteConfirm = false"
-          >
-            {{ $t('cancel') }}
-          </button>
-          <button
-            class="btn btn-sm btn-error"
-            @keydown.enter.stop
-            @click="confirmRemoveBackend"
-          >
-            Remove
-          </button>
-        </div>
-      </div>
-    </DialogWrapper>
   </div>
 </template>
 
 <script setup lang="ts">
 import { isTauri } from '@/api/tunnel'
-import { openActiveUpstreamDashboardIfNeeded } from '@/api/upstream_navigation'
-import DialogWrapper from '@/components/common/DialogWrapper.vue'
 import ImportSettings from '@/components/common/ImportSettings.vue'
 import TextInput from '@/components/common/TextInput.vue'
-import PageHeader from '@/components/layout/PageHeader.vue'
-import SectionCard from '@/components/layout/SectionCard.vue'
-import StatusChip from '@/components/layout/StatusChip.vue'
 import AppUpdater from '@/components/settings/AppUpdater.vue'
 import EditBackendModal from '@/components/settings/EditBackendModal.vue'
 import LanguageSelect from '@/components/settings/LanguageSelect.vue'
 import TunnelManager from '@/components/settings/TunnelManager.vue'
 import UpstreamUIManager from '@/components/settings/UpstreamUIManager.vue'
+import { openActiveUpstreamDashboardIfNeeded } from '@/api/upstream_navigation'
 import { ROUTE_NAME } from '@/constant'
-import { BUILTIN_ROUTE_META } from '@/constant/ui'
 import { showNotification } from '@/helper/notification'
-import {
-  getBackendFromUrl,
-  getLabelFromBackend,
-  getUrlFromBackend,
-  isMiddleScreen,
-} from '@/helper/utils'
+import { getBackendFromUrl, getLabelFromBackend, getUrlFromBackend, isMiddleScreen } from '@/helper/utils'
 import router from '@/router'
 import { activeUuid, addBackend, backendList, removeBackend } from '@/store/setup'
 import type { Backend } from '@/types'
@@ -351,10 +191,8 @@ import {
   QuestionMarkCircleIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import Draggable from 'vuedraggable'
-
-const routeMeta = BUILTIN_ROUTE_META[ROUTE_NAME.setup]
 
 const form = reactive({
   protocol: 'http',
@@ -365,61 +203,12 @@ const form = reactive({
   label: '',
 })
 
-const fieldErrors = reactive<Record<string, string>>({
-  host: '',
-  port: '',
-})
-
-const submitError = ref('')
-const submitting = ref(false)
 const showEditModal = ref(false)
 const editingBackendUuid = ref<string>('')
+const submitting = ref(false)
 const isTauriApp = isTauri
-const showDeleteConfirm = ref(false)
-const backendToDelete = ref<Backend | null>(null)
 
-const backendToDeleteLabel = computed(() =>
-  backendToDelete.value ? getLabelFromBackend(backendToDelete.value) : 'this backend',
-)
-
-const clearFieldErrors = () => {
-  fieldErrors.host = ''
-  fieldErrors.port = ''
-}
-
-const getSubmitErrorMessage = (error: unknown) => {
-  if (error instanceof Error) {
-    return error.message
-  }
-
-  if (typeof error === 'string') {
-    return error
-  }
-
-  return 'Unable to reach the backend.'
-}
-
-const validateForm = (payload: Omit<Backend, 'uuid'>) => {
-  clearFieldErrors()
-
-  if (!payload.host.trim()) {
-    fieldErrors.host = 'Host is required.'
-  }
-
-  if (!payload.port.trim()) {
-    fieldErrors.port = 'Port is required.'
-  } else if (!/^\d+$/.test(payload.port.trim())) {
-    fieldErrors.port = 'Port must be numeric.'
-  } else {
-    const port = Number(payload.port.trim())
-    if (port < 1 || port > 65535) {
-      fieldErrors.port = 'Port must be between 1 and 65535.'
-    }
-  }
-
-  return !fieldErrors.host && !fieldErrors.port
-}
-
+// 监听路由参数，自动打开编辑模态框
 watch(
   () => router.currentRoute.value.query.editBackend,
   (backendUuid) => {
@@ -434,24 +223,6 @@ watch(
   { immediate: true },
 )
 
-const handlePageEnter = (event: KeyboardEvent) => {
-  if (showDeleteConfirm.value || showEditModal.value) {
-    return
-  }
-
-  const target = event.target
-  if (!(target instanceof HTMLElement)) {
-    handleSubmit(form)
-    return
-  }
-
-  if (target.closest('button,[role="button"],a,[data-no-enter-submit]')) {
-    return
-  }
-
-  handleSubmit(form)
-}
-
 const selectBackend = async (uuid: string) => {
   activeUuid.value = uuid
   const redirected = await openActiveUpstreamDashboardIfNeeded()
@@ -465,35 +236,20 @@ const editBackend = (backend: Backend) => {
   showEditModal.value = true
 }
 
-const requestRemoveBackend = (backend: Backend) => {
-  backendToDelete.value = backend
-  showDeleteConfirm.value = true
-}
-
-const confirmRemoveBackend = () => {
-  if (!backendToDelete.value) return
-  removeBackend(backendToDelete.value.uuid)
-  if (activeUuid.value === backendToDelete.value.uuid) {
-    activeUuid.value = backendList.value[0]?.uuid || ''
-  }
-  showDeleteConfirm.value = false
-  backendToDelete.value = null
-  showNotification({
-    content: 'Backend removed',
-    type: 'alert-success',
-  })
-}
-
-const handleSubmit = async (payload: Omit<Backend, 'uuid'>, quiet = false) => {
+const handleSubmit = async (form: Omit<Backend, 'uuid'>, quiet = false) => {
   if (submitting.value) return
 
-  submitError.value = ''
-  if (!quiet && !validateForm(payload)) {
-    submitError.value = 'Please fix the highlighted fields before connecting.'
+  const { protocol, host, port, password } = form
+
+  if (!protocol || !host || !port) {
+    if (!quiet) alert('Please fill in all the fields.')
     return
   }
 
-  const { protocol, host, password } = payload
+  if (!/^\d+$/.test(port.trim()) || Number(port) < 1 || Number(port) > 65535) {
+    if (!quiet) alert('Port must be a number between 1 and 65535.')
+    return
+  }
 
   if (
     window.location.protocol === 'https:' &&
@@ -509,7 +265,7 @@ const handleSubmit = async (payload: Omit<Backend, 'uuid'>, quiet = false) => {
   submitting.value = true
 
   try {
-    const data = await fetch(`${getUrlFromBackend(payload)}/version`, {
+    const data = await fetch(`${getUrlFromBackend(form)}/version`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${password}`,
@@ -517,9 +273,8 @@ const handleSubmit = async (payload: Omit<Backend, 'uuid'>, quiet = false) => {
     })
 
     if (data.status !== 200) {
-      const message = data.statusText || `HTTP ${data.status}`
       if (!quiet) {
-        submitError.value = message
+        alert(data.statusText || `HTTP ${data.status}`)
       }
       return
     }
@@ -528,19 +283,19 @@ const handleSubmit = async (payload: Omit<Backend, 'uuid'>, quiet = false) => {
 
     if (!version) {
       if (!quiet) {
-        submitError.value = message || 'Backend did not return a version.'
+        alert(message || 'Backend did not return a version.')
       }
       return
     }
 
-    addBackend(payload)
+    addBackend(form)
     const redirected = await openActiveUpstreamDashboardIfNeeded()
     if (!redirected) {
       router.push({ name: ROUTE_NAME.proxies })
     }
   } catch (error) {
     if (!quiet) {
-      submitError.value = getSubmitErrorMessage(error)
+      alert(error instanceof Error ? error.message : 'Unable to reach the backend.')
     }
   } finally {
     submitting.value = false

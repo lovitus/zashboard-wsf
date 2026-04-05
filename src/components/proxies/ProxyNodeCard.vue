@@ -3,10 +3,8 @@
     ref="cardRef"
     :class="
       twMerge(
-        'border-base-content/8 bg-base-200/70 flex cursor-pointer flex-col items-start rounded-2xl border shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md',
-        active
-          ? 'border-primary/28 bg-primary/10 ring-primary/14 sm:hover:bg-primary/12 ring-1'
-          : 'sm:hover:bg-base-300/80',
+        'bg-base-200 flex cursor-pointer flex-col items-start rounded-md hover:shadow-md',
+        active ? 'bg-primary sm:hover:bg-primary/95' : 'sm:hover:bg-base-300',
         isSmallCard ? 'gap-1 p-1' : 'gap-2 p-2',
         latencyTipAnimationClass,
       )
@@ -25,7 +23,7 @@
         :fill="active ? 'fill-primary-content' : 'fill-base-content'"
       /><span
         v-if="active"
-        class="text-base-content font-semibold"
+        class="text-primary-content"
         >{{ node.name }}</span
       ><span
         v-else
@@ -36,7 +34,7 @@
 
     <div class="flex h-4 w-full items-center justify-between">
       <span
-        :class="`truncate text-xs tracking-tight ${active ? 'text-base-content/72' : 'text-base-content/60'}`"
+        :class="`truncate text-xs tracking-tight ${active ? 'text-primary-content' : 'text-base-content/60'}`"
         @mouseenter="checkTruncation"
       >
         {{ typeDescription }}
