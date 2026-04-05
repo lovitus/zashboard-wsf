@@ -540,6 +540,9 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
   if(window.__WSF_NAV_BUTTONS_READY__) return;
   window.__WSF_NAV_BUTTONS_READY__=true;
 
+  var fabOpen=false;
+  var autoCloseTimer=null;
+
   function goUpstreamSetup(){
     try{
       if(window.location.hash !== '#/setup'){
@@ -616,15 +619,9 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
     setTimeout(patchUpstreamSetupTouch, 900);
   }
 
-  function trySwitchBuiltin(btn){
+  function trySwitchBuiltin(label){
     try{
-      if(btn && btn.dataset.busy === '1') return;
-      if(btn){
-        btn.dataset.busy='1';
-        btn.style.pointerEvents='none';
-        btn.style.opacity='0.72';
-        btn.textContent='Switching...';
-      }
+      if(label) label.textContent='Switching\u2026';
 
       var postBuiltin=function(){
         return fetch('/__wsf_builtin', { method:'POST', cache:'no-store', keepalive:true }).catch(function(){});
@@ -640,60 +637,100 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         }catch(_){}
       }, 2200);
 
-      // Keep user on current page if native switch fails; allow manual retry.
       setTimeout(function(){
-        if(btn){
-          btn.style.pointerEvents='auto';
-          btn.style.opacity='0.9';
-          btn.dataset.busy='0';
-          btn.textContent='\u21A9 Built-in UI';
-        }
+        if(label) label.textContent='\u21A9 Built-in UI';
       }, 4200);
     }catch(_){}
+  }
+
+  function setFabOpen(open){
+    fabOpen=open;
+    var menu=document.getElementById('__wsf_fab_menu');
+    var trigger=document.getElementById('__wsf_fab_trigger');
+    if(!menu||!trigger) return;
+    menu.style.opacity=open?'1':'0';
+    menu.style.pointerEvents=open?'auto':'none';
+    menu.style.transform=open?'translateY(0) scale(1)':'translateY(8px) scale(0.9)';
+    trigger.textContent=open?'\u2715':'\u2699';
+    if(autoCloseTimer) clearTimeout(autoCloseTimer);
+    if(open){
+      autoCloseTimer=setTimeout(function(){ setFabOpen(false); }, 5000);
+    }
+  }
+
+  function resetAutoClose(){
+    if(!fabOpen) return;
+    if(autoCloseTimer) clearTimeout(autoCloseTimer);
+    autoCloseTimer=setTimeout(function(){ setFabOpen(false); }, 5000);
   }
 
   function inject(){
     try{
       if(!document.body) return;
 
-      if(!document.getElementById('__wsf_builtin_btn')){
-        var btn=document.createElement('button');
-        btn.id='__wsf_builtin_btn';
-        btn.type='button';
-        btn.textContent='\u21A9 Built-in UI';
-        btn.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom), 16px) + 18px);z-index:2147483647;background:rgba(59,130,246,.85);color:#fff;padding:7px 12px;border-radius:8px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.9;transition:opacity .2s;white-space:nowrap;max-width:45vw;overflow:hidden;text-overflow:ellipsis;';
-        btn.onmouseenter=function(){btn.style.opacity='1';};
-        btn.onmouseleave=function(){btn.style.opacity='0.9';};
-        btn.onclick=function(ev){
-          try{
-            if(ev){
-              ev.preventDefault();
-              ev.stopPropagation();
-            }
-          }catch(_){}
-          trySwitchBuiltin(btn);
-          return false;
-        };
-        document.body.appendChild(btn);
-      }
+      if(!document.getElementById('__wsf_fab')){
+        var fab=document.createElement('div');
+        fab.id='__wsf_fab';
+        fab.style.cssText='position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 16px);z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:6px;';
 
-      if(!document.getElementById('__wsf_setup_btn')){
-        var setupBtn=document.createElement('button');
-        setupBtn.id='__wsf_setup_btn';
-        setupBtn.type='button';
-        setupBtn.textContent='Setup';
-        setupBtn.style.cssText='position:fixed;left:12px;top:calc(max(env(safe-area-inset-top), 12px) + 8px);z-index:2147483647;background:rgba(255,255,255,.62);color:#111827;padding:6px 10px;border-radius:8px;border:1px solid rgba(107,114,128,.35);cursor:pointer;font-size:12px;line-height:1;backdrop-filter:blur(2px);';
-        setupBtn.onclick=function(ev){
-          try{
-            if(ev){
-              ev.preventDefault();
-              ev.stopPropagation();
-            }
-          }catch(_){}
-          goUpstreamSetup();
+        var menu=document.createElement('div');
+        menu.id='__wsf_fab_menu';
+        menu.style.cssText='display:flex;flex-direction:column;gap:5px;align-items:flex-end;opacity:0;pointer-events:none;transform:translateY(8px) scale(0.9);transition:opacity .18s,transform .18s;';
+
+        var btnBuiltin=document.createElement('button');
+        btnBuiltin.type='button';
+        var lblBuiltin=document.createElement('span');
+        lblBuiltin.textContent='\u21A9 Built-in UI';
+        btnBuiltin.appendChild(lblBuiltin);
+        btnBuiltin.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(59,130,246,.88);color:#fff;padding:7px 12px;border-radius:20px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;';
+        btnBuiltin.onmouseenter=function(){btnBuiltin.style.background='rgba(59,130,246,1)';resetAutoClose();};
+        btnBuiltin.onmouseleave=function(){btnBuiltin.style.background='rgba(59,130,246,.88)';};
+        btnBuiltin.onclick=function(ev){
+          try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
+          trySwitchBuiltin(lblBuiltin);
           return false;
         };
-        document.body.appendChild(setupBtn);
+
+        var btnSetup=document.createElement('button');
+        btnSetup.type='button';
+        btnSetup.textContent='\u2699 Setup';
+        btnSetup.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.78);color:#1f2937;padding:7px 12px;border-radius:20px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;';
+        btnSetup.onmouseenter=function(){btnSetup.style.background='rgba(255,255,255,.95)';resetAutoClose();};
+        btnSetup.onmouseleave=function(){btnSetup.style.background='rgba(255,255,255,.78)';};
+        btnSetup.onclick=function(ev){
+          try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
+          goUpstreamSetup();
+          setFabOpen(false);
+          return false;
+        };
+
+        menu.appendChild(btnBuiltin);
+        menu.appendChild(btnSetup);
+
+        var trigger=document.createElement('button');
+        trigger.id='__wsf_fab_trigger';
+        trigger.type='button';
+        trigger.textContent='\u2699';
+        trigger.style.cssText='width:36px;height:36px;border-radius:50%;border:0;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;background:rgba(107,114,128,.55);color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .15s,transform .15s;';
+        trigger.onmouseenter=function(){trigger.style.background='rgba(107,114,128,.75)';};
+        trigger.onmouseleave=function(){trigger.style.background='rgba(107,114,128,.55)';};
+        trigger.onclick=function(ev){
+          try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
+          setFabOpen(!fabOpen);
+          return false;
+        };
+
+        fab.appendChild(menu);
+        fab.appendChild(trigger);
+        document.body.appendChild(fab);
+
+        document.addEventListener('click', function(ev){
+          try{
+            if(fabOpen && fab && !fab.contains(ev.target)){
+              setFabOpen(false);
+            }
+          }catch(_){}
+        }, true);
       }
 
       scheduleSetupTouchPatch();
@@ -715,29 +752,52 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   if(window.__WSF_SAFE_AREA_PATCHED__) return;
   window.__WSF_SAFE_AREA_PATCHED__=true;
 
-  function patchBars(){
+  function ensureViewportFitCover(){
+    try{
+      var meta=document.querySelector('meta[name="viewport"]');
+      if(meta){
+        var c=meta.getAttribute('content')||'';
+        if(c.indexOf('viewport-fit')===-1){
+          meta.setAttribute('content',c+',viewport-fit=cover');
+        }
+      }else{
+        meta=document.createElement('meta');
+        meta.name='viewport';
+        meta.content='width=device-width,initial-scale=1,viewport-fit=cover';
+        (document.head||document.documentElement).appendChild(meta);
+      }
+    }catch(_){}
+  }
+
+  function injectSafeAreaStyle(){
     try{
       var style=document.getElementById('__wsf_safe_area_style');
       if(!style){
         style=document.createElement('style');
         style.id='__wsf_safe_area_style';
-        (document.head || document.documentElement).appendChild(style);
+        (document.head||document.documentElement).appendChild(style);
       }
       style.textContent=
-        ':root{--wsf-safe-top:max(env(safe-area-inset-top), 24px);--wsf-safe-bottom:max(env(safe-area-inset-bottom), 24px);}' +
-        '@media (max-width: 900px){' +
-        '.ctrls-bar{padding-top:var(--wsf-safe-top)!important;}' +
-        '.dock{bottom:calc(var(--spacing,4px) * 2 + var(--wsf-safe-bottom))!important;}' +
-        '.dock-shadow{height:var(--wsf-safe-bottom)!important;}' +
+        'html{'+
+          'padding-top:env(safe-area-inset-top)!important;'+
+          'padding-bottom:env(safe-area-inset-bottom)!important;'+
+          'padding-left:env(safe-area-inset-left)!important;'+
+          'padding-right:env(safe-area-inset-right)!important;'+
+          'min-height:100vh;min-height:100dvh;'+
+          'box-sizing:border-box;'+
         '}';
     }catch(_){}
   }
 
-  patchBars();
-  window.addEventListener('resize', patchBars);
-  window.addEventListener('load', patchBars);
-  setTimeout(patchBars, 300);
-  setTimeout(patchBars, 1200);
+  function patch(){
+    ensureViewportFitCover();
+    injectSafeAreaStyle();
+  }
+
+  patch();
+  window.addEventListener('load', patch);
+  setTimeout(patch, 300);
+  setTimeout(patch, 1200);
 })();
 </script>"#;
 
