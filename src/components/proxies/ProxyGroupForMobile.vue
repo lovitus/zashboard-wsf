@@ -6,19 +6,20 @@
   >
     <div
       v-if="modalMode"
-      class="bg-base-300/50 fixed inset-0 z-40 overflow-hidden"
+      class="bg-base-300/55 fixed inset-0 z-40 overflow-hidden backdrop-blur-sm"
+      @click.stop="handlerGroupClick"
     />
     <div
-      class="card absolute overflow-hidden transition-[width,transform,max-height] duration-200 ease-out will-change-transform"
+      class="border-base-content/8 bg-base-100 absolute overflow-hidden rounded-[var(--zb-radius-lg)] border shadow-xl transition-[width,transform,max-height] duration-200 ease-out will-change-transform"
       :class="modalMode && blurIntensity < 5 && 'backdrop-blur-sm!'"
       :style="cardStyle"
       @contextmenu.prevent.stop="handlerLatencyTest"
       @transitionend="handlerTransitionEnd"
       ref="cardRef"
     >
-      <div class="relative flex h-22 shrink-0 flex-col justify-between p-2">
+      <div class="relative flex h-22 shrink-0 flex-col justify-between p-3">
         <div
-          class="text-md truncate"
+          class="text-md truncate font-medium"
           :class="proxyGroup.icon && 'pr-10'"
         >
           {{ proxyGroup.name }}
@@ -33,7 +34,7 @@
           <div class="flex flex-1 items-center gap-1 truncate">
             <button
               v-if="manageHiddenGroup"
-              class="btn btn-circle btn-xs z-10"
+              class="btn btn-circle btn-xs btn-outline z-10"
               @click.stop="handlerGroupToggle"
             >
               <EyeIcon
@@ -51,7 +52,7 @@
             />
           </div>
           <LatencyTag
-            :class="twMerge('bg-base-200/50 hover:bg-base-200 z-10')"
+            :class="twMerge('bg-base-200/50 hover:bg-base-200 z-10 rounded-xl')"
             :loading="isLatencyTesting"
             :name="proxyGroup.now"
             :group-name="proxyGroup.name"
@@ -69,7 +70,7 @@
 
       <div
         v-if="displayContent"
-        class="will-change-opacity max-h-108 overflow-y-auto overscroll-contain p-2 transition-opacity duration-200 ease-out"
+        class="will-change-opacity border-base-content/8 max-h-108 overflow-y-auto overscroll-contain border-t p-2 transition-opacity duration-200 ease-out"
         :class="[SCROLLABLE_PARENT_CLASS]"
         :style="{
           width: 'calc(100vw - 1rem)',
@@ -83,6 +84,9 @@
           :now="proxyGroup.now"
           :render-proxies="renderProxies"
         />
+        <div class="text-base-content/50 px-2 pt-1 pb-2 text-center text-xs">
+          Tap outside the panel to close and return to the proxy grid.
+        </div>
       </div>
     </div>
   </div>

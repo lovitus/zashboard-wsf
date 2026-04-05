@@ -3,6 +3,7 @@
 Native Mihomo dashboard application built with [Tauri v2](https://v2.tauri.app/), based on [Zephyruso/zashboard](https://github.com/Zephyruso/zashboard).
 
 `v1.0.2` is the current stable native release of this project.
+`v1.0.3-test.0` is the current test release line for the in-progress UI shell refresh.
 
 ## Project Scope
 
@@ -27,7 +28,7 @@ This project intentionally uses two version lines:
 
 Current baseline:
 
-- Native app release line: `1.0.2`
+- Native app release line: `1.0.3-test.0` test / `1.0.2` stable
 - Built-in upstream UI baseline: `2.7.0`
 
 Do not bump `package.json` just to publish a new native wrapper release unless the built-in upstream UI is actually updated.
@@ -138,10 +139,10 @@ git push origin v1.0.2
 
 When adding a Mihomo backend, enable tunnel support if the backend is only reachable through SSH or relay paths.
 
-| Tool | Example Args |
-|------|--------------|
+| Tool     | Example Args                                                       |
+| -------- | ------------------------------------------------------------------ |
 | `slider` | `-listen ltcp://:19090/127.0.0.1:9090 -forward ssh://user@host:22` |
-| `gust` | `-L tcp://:19090/127.0.0.1:9090 -F relay+ssh://user@host:22` |
+| `gust`   | `-L tcp://:19090/127.0.0.1:9090 -F relay+ssh://user@host:22`       |
 
 ### Android Tunnel Behavior
 

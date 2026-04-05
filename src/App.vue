@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Ref, watch } from 'vue'
 import { RouterView } from 'vue-router'
-import { isTauri } from './api/tunnel'
 import { useKeyboard } from './composables/keyboard'
 import { EMOJIS, FONTS } from './constant'
 import { autoImportSettings, importSettingsFromUrl } from './helper/autoImportSettings'

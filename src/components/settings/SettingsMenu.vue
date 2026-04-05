@@ -1,14 +1,14 @@
 <template>
   <div
     ref="menuRef"
-    class="settings-menu scrollbar-hidden ctrls-bar p-1 px-2"
+    class="settings-menu scrollbar-hidden ctrls-bar rounded-[var(--zb-radius-lg)] p-2"
     @touchstart.passive.stop
     @touchmove.passive.stop
     @touchend.passive.stop
   >
-    <div class="relative flex w-full max-w-7xl flex-row">
+    <div class="relative flex w-full max-w-7xl flex-row overflow-x-auto">
       <div
-        class="bg-neutral absolute top-1 left-0 -z-1 h-8 rounded-lg"
+        class="bg-primary/12 border-primary/16 absolute top-1 left-0 -z-1 h-10 rounded-2xl border"
         :class="[!isSwiping ? 'transition-transform duration-300 will-change-transform' : '']"
         :style="activeStyle"
       ></div>
@@ -18,23 +18,24 @@
         ref="menuItemRefs"
         :data-key="item.key"
         :id="`menu-item-${item.key}`"
-        class="mr-2 flex h-10 w-full flex-1 flex-shrink-0 cursor-pointer items-center justify-center gap-2 truncate transition-all duration-300"
-        :class="[activeMenuKey === item.key ? 'text-neutral-content' : '']"
+        class="mr-2 flex h-10 w-full min-w-max flex-1 flex-shrink-0 cursor-pointer items-center justify-center gap-2 truncate rounded-2xl px-3 transition-all duration-300"
+        :class="[activeMenuKey === item.key ? 'text-primary' : 'text-base-content/68']"
         @click="handleMenuClick(item.key)"
       >
         <component
           :is="item.icon"
           class="h-5 w-5"
         />
-        <span class="hidden text-sm lg:block">
+        <span class="text-sm">
           {{ $t(item.label) }}
         </span>
       </div>
       <button
-        class="btn btn-circle btn-sm my-auto"
+        class="btn btn-sm btn-outline my-auto shrink-0 rounded-2xl"
         @click="showVisibilityDialog = true"
       >
         <Cog6ToothIcon class="h-4 w-4" />
+        <span class="max-md:hidden">Visible Items</span>
       </button>
     </div>
     <SettingsVisibilityDialog v-model="showVisibilityDialog" />

@@ -1,6 +1,9 @@
 import { disconnectAllAPI, disconnectByIdAPI } from '@/api'
+import ActionGroup from '@/components/layout/ActionGroup.vue'
+import StatusChip from '@/components/layout/StatusChip.vue'
 import { useCtrlsBar } from '@/composables/useCtrlsBar'
 import { ROUTE_NAME, SETTINGS_MENU_KEY, SORT_DIRECTION, SORT_TYPE } from '@/constant'
+import { BUILTIN_ROUTE_META } from '@/constant/ui'
 import { useTooltip } from '@/helper/tooltip'
 import {
   connectionFilter,
@@ -55,10 +58,19 @@ export default defineComponent({
     const { t } = useI18n()
     const router = useRouter()
     const settingsModel = ref(false)
+    const showCloseAllConfirm = ref(false)
     const { showTip, updateTip } = useTooltip()
     const { isLargeCtrlsBar } = useCtrlsBar(useConnectionCard.value ? 860 : 720)
 
     return () => {
+      const routeMeta = BUILTIN_ROUTE_META[ROUTE_NAME.connections]
+      const titleBlock = (
+        <div class="min-w-0 flex-1">
+          <div class="text-base-content text-sm font-semibold">{t(routeMeta.titleKey)}</div>
+          <div class="text-base-content/55 truncate text-xs">{routeMeta.subtitle}</div>
+        </div>
+      )
+
       const sortForCards = (
         <div
           class={`flex items-center gap-1 text-sm ${isLargeCtrlsBar.value ? 'w-auto' : 'w-full'}`}
@@ -100,10 +112,11 @@ export default defineComponent({
       const settingsModal = (
         <>
           <button
-            class="btn btn-circle btn-sm"
+            class="btn btn-sm btn-outline"
             onClick={() => (settingsModel.value = true)}
           >
             <WrenchScrewdriverIcon class="h-4 w-4" />
+            <span class="max-md:hidden">{t('moreSettings')}</span>
           </button>
           <DialogWrapper
             v-model={settingsModel.value}
@@ -150,6 +163,35 @@ export default defineComponent({
               </button>
             </div>
           </DialogWrapper>
+          <DialogWrapper
+            v-model={showCloseAllConfirm.value}
+            title="Close visible connections"
+          >
+            <div class="space-y-4">
+              <p class="text-sm leading-6">
+                {renderConnections.value.length === connections.value.length
+                  ? 'Close every visible connection in the current view?'
+                  : 'Close every filtered connection in the current view?'}
+              </p>
+              <div class="flex justify-end gap-2">
+                <button
+                  class="btn btn-sm"
+                  onClick={() => (showCloseAllConfirm.value = false)}
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  class="btn btn-sm btn-error"
+                  onClick={() => {
+                    handlerClickCloseAll()
+                    showCloseAllConfirm.value = false
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </DialogWrapper>
         </>
       )
 
@@ -166,7 +208,7 @@ export default defineComponent({
       const buttons = (
         <>
           <button
-            class="btn btn-circle btn-sm"
+            class={['btn btn-sm btn-outline', quickFilterEnabled.value && 'btn-info']}
             onClick={() => {
               quickFilterEnabled.value = !quickFilterEnabled.value
               updateTip(quickFilterEnabled.value ? t('showConnection') : t('hideConnection'))
@@ -182,55 +224,73 @@ export default defineComponent({
             ) : (
               <LinkIcon class="h-4 w-4" />
             )}
+            <span class="max-md:hidden">{t('hideConnection')}</span>
           </button>
           <button
-            class="btn btn-circle btn-sm"
+            class={['btn btn-sm btn-outline', isPaused.value && 'btn-warning']}
             onClick={() => {
               isPaused.value = !isPaused.value
             }}
           >
             {isPaused.value ? <PlayIcon class="h-4 w-4" /> : <PauseIcon class="h-4 w-4" />}
+            <span class="max-md:hidden">{isPaused.value ? 'Resume' : 'Pause'}</span>
           </button>
           <button
-            class="btn btn-circle btn-sm"
-            onClick={handlerClickCloseAll}
+            class="btn btn-sm btn-outline btn-error"
+            onClick={() => (showCloseAllConfirm.value = true)}
           >
             <XMarkIcon class="h-4 w-4" />
+            <span class="max-md:hidden">Close all</span>
           </button>
         </>
       )
 
       const content = !isLargeCtrlsBar.value ? (
-        <div class="flex flex-wrap items-center gap-2 p-2">
-          <div class="flex w-full items-center justify-between gap-2">
+        <div class="zb-toolbar-grid">
+          <div class="zb-toolbar-main">
+            {titleBlock}
+            <StatusChip
+              label={`${renderConnections.value.length} visible`}
+              tone="info"
+            />
+          </div>
+          <ActionGroup label="View">
             <ConnectionTabs />
-            {!useConnectionCard.value && (
-              <div class="flex items-center gap-1">
-                {settingsModal}
-                {buttons}
-              </div>
-            )}
-          </div>
-          {useConnectionCard.value && (
-            <div class="flex w-full items-center gap-2">
-              {sortForCards}
-              {settingsModal}
-              {buttons}
+            {useConnectionCard.value && sortForCards}
+          </ActionGroup>
+          <ActionGroup label="Filter">
+            <div class="join w-full">
+              <SourceIPFilter class="w-40" />
+              {searchInput}
             </div>
-          )}
-          <div class="join w-full">
-            <SourceIPFilter class="w-40" />
-            {searchInput}
-          </div>
+          </ActionGroup>
+          <ActionGroup label="Actions">
+            {settingsModal}
+            {buttons}
+          </ActionGroup>
         </div>
       ) : (
-        <div class="flex items-center gap-2 p-2">
-          <ConnectionTabs />
-          {useConnectionCard.value && sortForCards}
-          <SourceIPFilter class="w-40" />
-          <div class="flex flex-1">{searchInput}</div>
-          {settingsModal}
-          {buttons}
+        <div class="zb-toolbar-grid">
+          <div class="zb-toolbar-main">
+            {titleBlock}
+            <ActionGroup label="View">
+              <ConnectionTabs />
+              {useConnectionCard.value && sortForCards}
+            </ActionGroup>
+            <div class="zb-toolbar-fill">
+              <ActionGroup
+                label="Filter"
+                class="w-full"
+              >
+                <SourceIPFilter class="w-40" />
+                <div class="zb-toolbar-search">{searchInput}</div>
+              </ActionGroup>
+            </div>
+            <ActionGroup label="Actions">
+              {settingsModal}
+              {buttons}
+            </ActionGroup>
+          </div>
         </div>
       )
 

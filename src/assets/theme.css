@@ -1,4 +1,4 @@
-@plugin "daisyui/theme" {
+@plugin 'daisyui/theme' {
   name: 'dark-legacy';
   --color-primary: oklch(65.69% 0.196 275.75);
   --color-primary-content: #050617;
@@ -23,7 +23,7 @@
   color-scheme: dark;
 }
 
-@plugin "daisyui/theme" {
+@plugin 'daisyui/theme' {
   name: 'light-legacy';
   --color-primary: oklch(49.12% 0.3096 275.75);
   --color-primary-content: #d4dbff;
@@ -45,4 +45,16 @@
   --border: 1px;
   --depth: 0;
   --noise: 0;
+}
+
+:root,
+[data-theme] {
+  --zb-shell-bg: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-base-200) 42%, transparent),
+    color-mix(in srgb, var(--color-base-100) 96%, transparent)
+  );
+  --zb-panel-bg: color-mix(in srgb, var(--color-base-100) 88%, transparent);
+  --zb-panel-border: color-mix(in srgb, var(--color-base-content) 10%, transparent);
+  --zb-muted: color-mix(in srgb, var(--color-base-content) 66%, transparent);
 }

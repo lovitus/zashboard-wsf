@@ -3,63 +3,71 @@
     class="bg-base-200/50 home-page flex size-full"
     :class="isSidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'"
   >
-    <SideBar v-if="!isMiddleScreen" />
-    <RouterView v-slot="{ Component, route }">
-      <div
-        class="relative flex-1 overflow-hidden"
-        ref="swiperRef"
-      >
-        <button
-          v-if="isMiddleScreen"
-          class="btn btn-xs absolute left-2 z-40 border-base-300/60 bg-base-100/55 text-base-content shadow-sm backdrop-blur-md hover:bg-base-100/72"
-          :style="{ top: `calc(8px + ${mobileSafeInset})`, transform: 'translateY(50%)' }"
-          @click.stop.prevent="goToSetupManager"
+    <AppShell
+      stacked-on-mobile
+      shell-class="w-full p-2"
+      main-class="relative"
+    >
+      <template #aside>
+        <SideBar v-if="!isMiddleScreen" />
+      </template>
+      <RouterView v-slot="{ Component, route }">
+        <div
+          class="relative flex h-full flex-1 overflow-hidden rounded-[var(--zb-radius-lg)]"
+          ref="swiperRef"
         >
-          {{ $t('setup') }}
-        </button>
-
-        <div class="absolute flex h-full w-full flex-col overflow-y-auto">
-          <Transition
-            :name="(route.meta.transition as string) || 'fade'"
+          <button
             v-if="isMiddleScreen"
+            class="btn btn-sm btn-outline bg-base-100/80 absolute left-3 z-40 rounded-2xl shadow-sm backdrop-blur-md"
+            :style="{ top: `calc(10px + ${mobileSafeInset})`, transform: 'translateY(50%)' }"
+            @click.stop.prevent="goToSetupManager"
           >
-            <Component :is="Component" />
-          </Transition>
-          <Component
-            v-else
-            :is="Component"
-          />
-        </div>
+            <ServerIcon class="h-4 w-4" />
+            {{ $t('setup') }}
+          </button>
 
-        <template v-if="isMiddleScreen">
-          <div
-            class="bg-base-100/20 dock dock-xs z-10 h-14 w-auto shadow-sm backdrop-blur-sm"
-            :style="{
-              padding: '0',
-              bottom: `calc(var(--spacing) * 2 + ${mobileSafeInset})`,
-            }"
-            ref="dockRef"
-          >
-            <button
-              v-for="r in renderRoutes"
-              :key="r"
-              @click="router.push({ name: r })"
-              class="h-14 flex-col items-center justify-center pt-2"
-              :class="r === route.name && 'dock-active'"
+          <div class="absolute flex h-full w-full flex-col overflow-y-auto">
+            <Transition
+              :name="(route.meta.transition as string) || 'fade'"
+              v-if="isMiddleScreen"
             >
-              <component
-                :is="ROUTE_ICON_MAP[r]"
-                class="h-5 w-5 flex-shrink-0"
-              />
-              <span class="dock-label">
-                {{ $t(r) }}
-              </span>
-            </button>
+              <Component :is="Component" />
+            </Transition>
+            <Component
+              v-else
+              :is="Component"
+            />
           </div>
-          <div class="dock-shadow"></div>
-        </template>
-      </div>
-    </RouterView>
+
+          <template v-if="isMiddleScreen">
+            <div
+              class="zb-mobile-dock"
+              :style="{
+                bottom: `calc(var(--spacing) * 2 + ${mobileSafeInset})`,
+              }"
+              ref="dockRef"
+            >
+              <button
+                v-for="r in renderRoutes"
+                :key="r"
+                @click="router.push({ name: r })"
+                class="h-14 flex-col items-center justify-center"
+                :class="r === route.name && 'dock-active'"
+              >
+                <component
+                  :is="ROUTE_ICON_MAP[r]"
+                  class="h-5 w-5 flex-shrink-0"
+                />
+                <span class="dock-label">
+                  {{ $t(r) }}
+                </span>
+              </button>
+            </div>
+            <div class="dock-shadow"></div>
+          </template>
+        </div>
+      </RouterView>
+    </AppShell>
 
     <DialogWrapper v-model="autoSwitchBackendDialog">
       <div class="mb-2">
@@ -86,6 +94,7 @@
 <script setup lang="ts">
 import { isBackendAvailable } from '@/api'
 import DialogWrapper from '@/components/common/DialogWrapper.vue'
+import AppShell from '@/components/layout/AppShell.vue'
 import SideBar from '@/components/sidebar/SideBar.vue'
 import { dockTop } from '@/composables/paddingViews'
 import { useSettings } from '@/composables/settings'
@@ -103,6 +112,7 @@ import { fetchRules, rulesTabShow } from '@/store/rules'
 import { isSidebarCollapsed } from '@/store/settings'
 import { activeBackend, activeUuid, backendList } from '@/store/setup'
 import type { Backend } from '@/types'
+import { ServerIcon } from '@heroicons/vue/24/outline'
 import { useDocumentVisibility, useElementBounding } from '@vueuse/core'
 import { ref, watch } from 'vue'
 import { RouterView, useRouter } from 'vue-router'

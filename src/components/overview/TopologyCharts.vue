@@ -1,8 +1,16 @@
 <template>
-  <div class="card">
-    <div class="card-title absolute px-4 pt-4">
-      {{ $t('connectionTopology') }}
-    </div>
+  <SectionCard
+    title="Connection topology"
+    subtitle="Live sankey view of source IPs, rules, and proxy chain flow."
+    body-class="p-0!"
+  >
+    <template #actions>
+      <StatusChip
+        :label="isPaused ? 'Paused' : 'Live'"
+        :tone="isPaused ? 'warning' : 'success'"
+        dot
+      />
+    </template>
     <div
       :class="twMerge('relative h-96 w-full overflow-hidden pt-12')"
       @mousemove.stop
@@ -29,26 +37,28 @@
         :class="isFullScreen ? 'fixed right-4 bottom-4 mb-[env(safe-area-inset-bottom)]' : ''"
       >
         <button
-          class="btn btn-ghost btn-circle btn-sm"
+          class="btn btn-sm btn-outline"
           @click="isPaused = !isPaused"
         >
           <component
             :is="!isPaused ? PauseCircleIcon : PlayCircleIcon"
             class="h-4 w-4"
           />
+          <span class="max-md:hidden">{{ isPaused ? 'Resume' : 'Pause' }}</span>
         </button>
         <button
-          class="btn btn-ghost btn-circle btn-sm"
+          class="btn btn-sm btn-outline"
           @click="isFullScreen = !isFullScreen"
         >
           <component
             :is="isFullScreen ? ArrowsPointingInIcon : ArrowsPointingOutIcon"
             class="h-4 w-4"
           />
+          <span class="max-md:hidden">{{ isFullScreen ? 'Exit full screen' : 'Full screen' }}</span>
         </button>
       </div>
     </div>
-  </div>
+  </SectionCard>
   <Teleport to="body">
     <div
       v-if="isFullScreen"
@@ -83,6 +93,8 @@
 </template>
 
 <script setup lang="ts">
+import SectionCard from '@/components/layout/SectionCard.vue'
+import StatusChip from '@/components/layout/StatusChip.vue'
 import { backgroundImage } from '@/helper/indexeddb'
 import { getIPLabelFromMap } from '@/helper/sourceip'
 import { isMiddleScreen } from '@/helper/utils'

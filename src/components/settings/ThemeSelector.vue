@@ -1,10 +1,17 @@
 <template>
   <div
-    class="join-item input input-sm inline w-48 p-0"
+    class="join-item input input-sm border-base-content/8 bg-base-100/70 inline w-48 p-0"
     @click="handlerDropdown"
   >
-    <div class="flex h-full w-full cursor-pointer items-center indent-4">
-      {{ theme }}
+    <div class="flex h-full w-full cursor-pointer items-center justify-between gap-2 px-3">
+      <div class="min-w-0">
+        <div class="truncate text-sm font-medium">{{ theme }}</div>
+        <div class="zb-subtle-text text-[11px]">Theme preset</div>
+      </div>
+      <div
+        class="border-base-content/10 bg-primary/80 h-4 w-6 rounded-full border"
+        :data-theme="theme"
+      ></div>
     </div>
   </div>
 </template>

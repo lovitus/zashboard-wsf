@@ -170,8 +170,8 @@ export default defineComponent<{
       return (
         <div
           class={[
-            'card cursor-pointer gap-1',
-            connectionCardLines.value.length > 2 ? 'p-2' : 'p-1',
+            'border-base-content/8 bg-base-100/72 hover:bg-base-200/72 mb-2 cursor-pointer gap-1 rounded-[var(--zb-radius-lg)] border shadow-sm transition-colors',
+            connectionCardLines.value.length > 2 ? 'p-3' : 'p-2',
           ]}
           onClick={() => handlerInfo(conn)}
         >

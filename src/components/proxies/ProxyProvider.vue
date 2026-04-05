@@ -1,5 +1,8 @@
 <template>
-  <CollapseCard :name="proxyProvider.name">
+  <CollapseCard
+    :name="proxyProvider.name"
+    class="zb-panel"
+  >
     <template v-slot:title>
       <div class="flex items-center justify-between gap-2">
         <div class="text-xl font-medium">
@@ -8,7 +11,7 @@
         </div>
         <div class="flex gap-2">
           <button
-            :class="twMerge('btn btn-circle btn-sm z-30')"
+            :class="twMerge('btn btn-sm btn-outline z-30')"
             @click.stop="healthCheckClickHandler"
           >
             <span
@@ -19,20 +22,22 @@
               v-else
               class="h-4 w-4"
             />
+            <span class="max-md:hidden">Health</span>
           </button>
           <button
             v-if="proxyProvider.vehicleType !== 'Inline'"
-            :class="twMerge('btn btn-circle btn-sm z-30', isUpdating ? 'animate-spin' : '')"
+            :class="twMerge('btn btn-sm btn-outline z-30', isUpdating ? 'animate-spin' : '')"
             @click.stop="updateProviderClickHandler"
           >
             <ArrowPathIcon class="h-4 w-4" />
+            <span class="max-md:hidden">{{ $t('refresh') }}</span>
           </button>
         </div>
       </div>
       <div
         class="text-base-content/60 flex items-end justify-between text-sm max-sm:flex-col max-sm:items-start"
       >
-        <div class="min-h-10">
+        <div class="bg-base-200/55 min-h-10 rounded-2xl px-3 py-2">
           <div v-if="subscriptionInfo">
             {{ subscriptionInfo.expireStr }}
           </div>

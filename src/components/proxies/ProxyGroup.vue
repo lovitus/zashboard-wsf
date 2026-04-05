@@ -1,6 +1,7 @@
 <template>
   <CollapseCard
     :name="proxyGroup.name"
+    class="zb-panel"
     @contextmenu.prevent.stop="handlerLatencyTest"
   >
     <template v-slot:title>
@@ -16,7 +17,7 @@
           </span>
           <button
             v-if="manageHiddenGroup"
-            class="btn btn-circle btn-xs z-10 ml-1"
+            class="btn btn-circle btn-xs btn-outline z-10 ml-1"
             @click.stop="handlerGroupToggle"
           >
             <EyeIcon
@@ -30,7 +31,7 @@
           </button>
         </div>
         <LatencyTag
-          :class="twMerge('bg-base-200/50 hover:bg-base-200 z-10')"
+          :class="twMerge('bg-base-200/50 hover:bg-base-200 z-10 rounded-xl')"
           :loading="isLatencyTesting"
           :name="proxyGroup.now"
           :group-name="proxyGroup.name"
@@ -41,7 +42,9 @@
         <div class="flex flex-1 items-center gap-1 truncate text-sm">
           <ProxyGroupNow :name="name" />
         </div>
-        <div class="min-w-12 shrink-0 text-right text-xs">
+        <div
+          class="border-base-content/8 bg-base-200/55 min-w-18 shrink-0 rounded-full border px-2 py-1 text-right text-xs"
+        >
           {{ prettyBytesHelper(downloadTotal) }}/s
         </div>
       </div>

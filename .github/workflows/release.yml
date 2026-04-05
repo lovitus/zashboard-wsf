@@ -157,6 +157,14 @@ jobs:
 
             Release assets for this tag are attached below.
 
+            Release type:
+            - ${{ contains(github.ref_name, '-') && 'Prerelease / test validation build' || 'Stable release' }}
+
+            Summary:
+            - Built-in shell refresh and setup/settings hardening release line
+            - Built-in upstream UI baseline remains aligned with package.json for this repository state
+            - See CHANGELOG.md for the scoped notes tied to this exact tag
+
             Documentation:
             - README: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md
             - CHANGELOG: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md
@@ -165,7 +173,7 @@ jobs:
             Note:
             - Native app release version and built-in upstream UI version are tracked separately in this repository.
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
 
   build-android:

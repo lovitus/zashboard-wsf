@@ -20,6 +20,36 @@
   --font-SystemUI-Twemoji: 'Twemoji', system-ui;
 }
 
+:root,
+[data-theme] {
+  --zb-shell-bg:
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--color-primary) 10%, transparent),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      color-mix(in srgb, var(--color-secondary) 10%, transparent),
+      transparent 28%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-base-200) 84%, transparent),
+      color-mix(in srgb, var(--color-base-100) 96%, transparent)
+    );
+  --zb-panel-bg: color-mix(in srgb, var(--color-base-100) 88%, transparent);
+  --zb-panel-muted: color-mix(in srgb, var(--color-base-200) 78%, transparent);
+  --zb-panel-border: color-mix(in srgb, var(--color-base-content) 10%, transparent);
+  --zb-panel-border-strong: color-mix(in srgb, var(--color-base-content) 18%, transparent);
+  --zb-muted: color-mix(in srgb, var(--color-base-content) 66%, transparent);
+  --zb-elevated-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+  --zb-soft-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
+  --zb-glass-blur: 18px;
+  --zb-toolbar-height: 72px;
+  --zb-radius-lg: 1.25rem;
+}
+
 @layer utilities {
   @font-face {
     font-family: 'NotoEmoji';
@@ -91,6 +121,233 @@
 .btn.btn-sm,
 .tabs.tabs-xs .tab {
   @apply text-sm;
+}
+
+.zb-shell {
+  @apply flex h-full min-h-0 w-full gap-2 p-2;
+  background: var(--zb-shell-bg);
+}
+
+.zb-shell-mobile-stack {
+  @apply max-md:flex-col;
+}
+
+.zb-shell-aside {
+  @apply min-h-0;
+}
+
+.zb-shell-main {
+  @apply min-h-0 flex-1 overflow-hidden;
+}
+
+.zb-page-header {
+  @apply border-base-content/8 flex items-start justify-between gap-4 rounded-[var(--zb-radius-lg)] border px-4 py-4;
+  background: var(--zb-panel-bg);
+  box-shadow: var(--zb-soft-shadow);
+}
+
+.zb-page-header-compact {
+  @apply px-3 py-3;
+}
+
+.zb-page-header-icon {
+  @apply text-primary border-primary/14 bg-primary/8 flex h-11 w-11 items-center justify-center rounded-2xl border;
+}
+
+.zb-page-header-eyebrow {
+  @apply text-base-content/55 text-[11px] font-semibold tracking-[0.18em] uppercase;
+}
+
+.zb-page-header-title {
+  @apply text-base-content text-xl leading-tight font-semibold;
+}
+
+.zb-page-header-subtitle {
+  color: var(--zb-muted);
+  @apply mt-1 max-w-2xl text-sm leading-6;
+}
+
+.zb-page-header-actions {
+  @apply flex shrink-0 flex-wrap items-center justify-end gap-2;
+}
+
+.zb-action-group {
+  @apply border-base-content/8 flex items-center gap-2 rounded-2xl border px-2 py-2;
+  background: color-mix(in srgb, var(--zb-panel-bg) 92%, transparent);
+}
+
+.zb-action-group-stacked {
+  @apply flex-col items-stretch;
+}
+
+.zb-action-group-flush {
+  @apply border-0 bg-transparent p-0 shadow-none;
+}
+
+.zb-action-group-label {
+  color: var(--zb-muted);
+  @apply px-1 text-[11px] font-semibold tracking-[0.16em] uppercase;
+}
+
+.zb-action-group-content {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.zb-status-chip {
+  @apply inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium;
+  border: 1px solid transparent;
+}
+
+.zb-status-chip-dot {
+  @apply h-2 w-2 rounded-full;
+  background: currentColor;
+}
+
+.zb-status-chip-neutral {
+  @apply text-base-content/70 bg-base-200/70 border-base-content/10;
+}
+
+.zb-status-chip-info {
+  @apply text-info bg-info/10 border-info/20;
+}
+
+.zb-status-chip-success {
+  @apply text-success bg-success/10 border-success/20;
+}
+
+.zb-status-chip-warning {
+  @apply text-warning bg-warning/10 border-warning/20;
+}
+
+.zb-status-chip-danger {
+  @apply text-error bg-error/10 border-error/20;
+}
+
+.zb-section-card {
+  @apply border-base-content/8 flex flex-col overflow-hidden rounded-[var(--zb-radius-lg)] border;
+  background: var(--zb-panel-bg);
+  box-shadow: var(--zb-soft-shadow);
+}
+
+.zb-section-card-muted {
+  background: var(--zb-panel-muted);
+}
+
+.zb-section-card-header {
+  @apply border-base-content/8 flex items-start justify-between gap-3 border-b px-4 py-4;
+}
+
+.zb-section-card-title {
+  @apply text-base-content text-base font-semibold;
+}
+
+.zb-section-card-subtitle {
+  color: var(--zb-muted);
+  @apply mt-1 text-sm leading-6;
+}
+
+.zb-section-card-actions {
+  @apply flex shrink-0 items-center gap-2;
+}
+
+.zb-section-card-body {
+  @apply p-4;
+}
+
+.zb-toolbar {
+  @apply border-base-content/8 md:bg-base-100/40 sticky top-0 right-0 left-0 z-30 rounded-b-[var(--zb-radius-lg)] border-x border-b shadow-sm;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--zb-panel-bg) 98%, transparent),
+    color-mix(in srgb, var(--zb-panel-bg) 88%, transparent)
+  );
+  backdrop-filter: blur(var(--zb-glass-blur));
+}
+
+.zb-toolbar-grid {
+  @apply flex flex-col gap-2 p-2;
+}
+
+.zb-toolbar-main {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.zb-toolbar-side {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.zb-toolbar-fill {
+  @apply flex min-w-0 flex-1 items-center gap-2;
+}
+
+.zb-toolbar-search {
+  @apply min-w-[14rem] flex-1;
+}
+
+.zb-panel {
+  @apply border-base-content/8 rounded-[var(--zb-radius-lg)] border;
+  background: var(--zb-panel-bg);
+  box-shadow: var(--zb-soft-shadow);
+}
+
+.zb-panel-inset {
+  @apply border-base-content/8 rounded-2xl border;
+  background: color-mix(in srgb, var(--color-base-200) 72%, transparent);
+}
+
+.zb-empty-state {
+  @apply text-base-content/60 border-base-content/8 rounded-[var(--zb-radius-lg)] border border-dashed px-4 py-6 text-center text-sm;
+  background: color-mix(in srgb, var(--color-base-200) 52%, transparent);
+}
+
+.zb-danger-zone {
+  @apply bg-error/6 border-error/16 rounded-2xl border;
+}
+
+.zb-subtle-text {
+  color: var(--zb-muted);
+}
+
+.zb-nav-link {
+  @apply text-base-content/72 hover:text-base-content border border-transparent transition-all duration-200;
+}
+
+.zb-nav-link:hover {
+  background: color-mix(in srgb, var(--color-base-200) 84%, transparent);
+}
+
+.zb-nav-link-active {
+  @apply text-base-content;
+  border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-primary) 16%, transparent),
+    color-mix(in srgb, var(--color-base-100) 92%, transparent)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.zb-mobile-dock {
+  @apply border-base-content/10 fixed right-2 left-2 z-30 flex items-center justify-between gap-1 rounded-[2rem] border px-2 py-2;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--zb-panel-bg) 96%, transparent),
+    color-mix(in srgb, var(--zb-panel-muted) 86%, transparent)
+  );
+  box-shadow: var(--zb-elevated-shadow);
+  backdrop-filter: blur(calc(var(--zb-glass-blur) + 4px));
+}
+
+.zb-mobile-dock button {
+  @apply text-base-content/68 flex-1 rounded-2xl px-2 py-2 transition-colors;
+}
+
+.zb-mobile-dock button.dock-active {
+  @apply text-primary bg-primary/10;
+}
+
+.zb-mobile-dock .dock-label {
+  @apply mt-1 text-[11px] font-medium;
 }
 
 @for $i from 0 to 100 {
@@ -342,15 +599,16 @@ div {
   z-index: 10;
 }
 .ctrls-bar {
+  @apply border-base-content/8 md:bg-base-100/40 sticky top-0 right-0 left-0 z-30 rounded-b-[var(--zb-radius-lg)] border-x border-b shadow-sm;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--zb-panel-bg) 98%, transparent),
+    color-mix(in srgb, var(--zb-panel-bg) 88%, transparent)
+  );
+  backdrop-filter: blur(var(--zb-glass-blur));
   @media screen and (max-width: 768px) {
-    background: linear-gradient(
-      to bottom,
-      var(--color-base-100),
-      color-mix(in srgb, var(--color-base-100) 10%, transparent)
-    );
     padding-top: env(safe-area-inset-top);
   }
-  @apply md:bg-base-100/20 fixed top-0 right-0 left-0 z-30 shadow-sm backdrop-blur-lg md:sticky;
 }
 
 .dock {
@@ -358,7 +616,7 @@ div {
 }
 
 .settings-title {
-  @apply flex items-center gap-2 py-2 text-lg font-bold;
+  @apply flex items-center gap-2 py-2 text-lg font-semibold;
 }
 .settings-grid {
   @apply grid max-w-7xl grid-cols-1 gap-x-4 gap-y-1 lg:grid-cols-2 lg:gap-x-8 xl:gap-x-12 2xl:gap-x-16;
@@ -366,12 +624,29 @@ div {
 .sidebar-collapsed .settings-grid {
   @apply md:grid-cols-2;
 }
+.settings-block {
+  @apply border-base-content/8 bg-base-200/38 mb-4 rounded-[var(--zb-radius-lg)] border p-4;
+}
+.settings-block-header {
+  @apply mb-4 flex flex-col gap-1;
+}
+.settings-block-title {
+  @apply text-base font-semibold;
+}
+.settings-block-description {
+  color: var(--zb-muted);
+  @apply text-sm leading-6;
+}
 .setting-item {
-  @apply border-base-300/80 flex h-10 items-center gap-2 border-b;
+  @apply border-base-content/8 flex min-h-12 items-center gap-3 border-b py-2;
   .setting-item-label {
-    @apply flex-1 text-sm font-medium;
+    @apply flex-1 text-sm leading-5 font-medium;
     svg {
       @apply inline-block;
     }
   }
+}
+.setting-item-note {
+  color: var(--zb-muted);
+  @apply mt-1 text-xs leading-5 font-normal;
 }

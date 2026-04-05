@@ -78,14 +78,18 @@ const truncatedProxies = computed(() => {
     <div
       v-for="({ providerName, proxies }, index) in truncatedProxies"
       :key="index"
+      class="space-y-2"
     >
-      <p
-        class="my-2 text-sm font-semibold"
+      <div
+        class="border-base-content/8 bg-base-200/35 flex items-center justify-between rounded-[calc(var(--zb-radius-lg)-0.35rem)] border px-3 py-2"
         v-if="providerName !== ''"
       >
-        {{ providerName }}
-      </p>
-      <ProxyNodeGrid>
+        <p class="text-sm font-semibold">
+          {{ providerName }}
+        </p>
+        <span class="zb-subtle-text text-xs">{{ proxies.length }} nodes</span>
+      </div>
+      <ProxyNodeGrid v-if="proxies.length">
         <ProxyNodeCard
           v-for="node in proxies"
           :key="node"

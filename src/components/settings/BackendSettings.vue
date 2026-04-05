@@ -4,198 +4,218 @@
     v-if="hasVisibleItems"
     class="flex flex-col gap-2 p-4 text-sm"
   >
-    <div class="settings-title">
-      <div class="indicator">
-        <span
-          v-if="isCoreUpdateAvailable"
-          class="indicator-item top-1 -right-1 flex"
-        >
-          <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
-          <span class="bg-secondary h-2 w-2 rounded-full"></span>
-        </span>
-        <a
-          class="flex cursor-pointer items-center gap-2"
-          :href="
-            isSingBox
-              ? 'https://github.com/sagernet/sing-box'
-              : 'https://github.com/metacubex/mihomo'
-          "
-          target="_blank"
-        >
-          {{ $t('backend') }}
-          <BackendVersion class="text-sm font-normal" />
-        </a>
+    <div class="settings-block">
+      <div class="settings-block-header">
+        <div class="settings-title">
+          <div class="indicator">
+            <span
+              v-if="isCoreUpdateAvailable"
+              class="indicator-item top-1 -right-1 flex"
+            >
+              <span class="bg-secondary absolute h-2 w-2 animate-ping rounded-full"></span>
+              <span class="bg-secondary h-2 w-2 rounded-full"></span>
+            </span>
+            <a
+              class="flex cursor-pointer items-center gap-2"
+              :href="
+                isSingBox
+                  ? 'https://github.com/sagernet/sing-box'
+                  : 'https://github.com/metacubex/mihomo'
+              "
+              target="_blank"
+            >
+              {{ $t('backend') }}
+              <BackendVersion class="text-sm font-normal" />
+            </a>
+          </div>
+        </div>
+        <div class="settings-block-description">
+          Runtime controls, local ports, and core maintenance actions for the selected backend.
+        </div>
       </div>
-    </div>
-    <BackendSwitch v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.backendSwitch`]" />
+      <BackendSwitch v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.backendSwitch`]" />
 
-    <template
-      v-if="!isSingBox && configs && !hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.ports`]"
-    >
-      <div class="divider"></div>
-      <div
-        class="grid max-w-3xl gap-2 gap-x-6"
-        :style="`grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));`"
+      <template
+        v-if="!isSingBox && configs && !hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.ports`]"
       >
+        <div class="divider"></div>
         <div
-          class="setting-item"
-          v-for="portConfig in portList"
-          :key="portConfig.key"
+          class="grid max-w-3xl gap-2 gap-x-6"
+          :style="`grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));`"
         >
-          <div class="setting-item-label">
-            {{ $t(portConfig.label) }}
-          </div>
-          <input
-            class="input input-sm w-20 sm:w-24"
-            type="number"
-            v-model="configs[portConfig.key as keyof Config]"
-            @change="
-              updateConfigs({ [portConfig.key]: Number(configs[portConfig.key as keyof Config]) })
-            "
-          />
-        </div>
-      </div>
-      <div
-        class="grid max-w-3xl gap-2 gap-x-6"
-        :style="`grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));`"
-      >
-        <div
-          v-if="configs?.tun && !hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.tunMode`]"
-          class="setting-item"
-        >
-          <div class="setting-item-label">
-            {{ $t('tunMode') }}
-          </div>
-          <input
-            class="toggle"
-            type="checkbox"
-            v-model="configs.tun.enable"
-            @change="hanlderTunModeChange"
-          />
-        </div>
-        <div
-          v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.allowLan`]"
-          class="setting-item"
-        >
-          <div class="setting-item-label">
-            {{ $t('allowLan') }}
-          </div>
-          <input
-            class="toggle"
-            type="checkbox"
-            v-model="configs['allow-lan']"
-            @change="handlerAllowLanChange"
-          />
-        </div>
-        <template v-if="!activeBackend?.disableUpgradeCore">
           <div
-            v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.checkUpgrade`]"
+            class="setting-item"
+            v-for="portConfig in portList"
+            :key="portConfig.key"
+          >
+            <div class="setting-item-label">
+              <div>{{ $t(portConfig.label) }}</div>
+              <div class="setting-item-note">Expose the backend service on this local port.</div>
+            </div>
+            <input
+              class="input input-sm w-20 sm:w-24"
+              type="number"
+              v-model="configs[portConfig.key as keyof Config]"
+              @change="
+                updateConfigs({ [portConfig.key]: Number(configs[portConfig.key as keyof Config]) })
+              "
+            />
+          </div>
+        </div>
+        <div
+          class="grid max-w-3xl gap-2 gap-x-6"
+          :style="`grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));`"
+        >
+          <div
+            v-if="configs?.tun && !hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.tunMode`]"
             class="setting-item"
           >
             <div class="setting-item-label">
-              {{ $t('checkUpgrade') }}
+              <div>{{ $t('tunMode') }}</div>
+              <div class="setting-item-note">
+                Toggle the backend tunnel stack without leaving the built-in UI.
+              </div>
             </div>
             <input
               class="toggle"
               type="checkbox"
-              v-model="checkUpgradeCore"
-              @change="handlerCheckUpgradeCoreChange"
+              v-model="configs.tun.enable"
+              @change="hanlderTunModeChange"
             />
           </div>
           <div
-            v-if="
-              checkUpgradeCore && !hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.autoUpgrade`]
-            "
+            v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.allowLan`]"
             class="setting-item"
           >
             <div class="setting-item-label">
-              {{ $t('autoUpgrade') }}
+              <div>{{ $t('allowLan') }}</div>
+              <div class="setting-item-note">
+                Allow devices on the local network to access the backend ports.
+              </div>
             </div>
             <input
               class="toggle"
               type="checkbox"
-              v-model="autoUpgradeCore"
+              v-model="configs['allow-lan']"
+              @change="handlerAllowLanChange"
             />
           </div>
-        </template>
-      </div>
-    </template>
-
-    <div
-      v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.actions`]"
-      class="divider"
-    ></div>
-
-    <div
-      v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.actions`]"
-      class="grid max-w-6xl gap-2 gap-y-3"
-      :style="`grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));`"
-    >
-      <template v-if="!isSingBox || displayAllFeatures">
-        <button
-          v-if="!activeBackend?.disableUpgradeCore"
-          class="btn btn-primary btn-sm"
-          @click="showUpgradeCoreModal = true"
-        >
-          {{ $t('upgradeCore') }}
-        </button>
-        <button
-          class="btn btn-sm"
-          @click="handlerClickRestartCore"
-        >
-          <span
-            v-if="isCoreRestarting"
-            class="loading loading-spinner loading-md"
-          ></span>
-          {{ $t('restartCore') }}
-        </button>
-        <button
-          class="btn btn-sm"
-          @click="handlerClickReloadConfigs"
-        >
-          <span
-            v-if="isConfigReloading"
-            class="loading loading-spinner loading-md"
-          ></span>
-          {{ $t('reloadConfigs') }}
-        </button>
-        <button
-          class="btn btn-sm"
-          @click="handlerClickUpdateGeo"
-        >
-          <span
-            v-if="isGeoUpdating"
-            class="loading loading-spinner loading-md"
-          ></span>
-          {{ $t('updateGeoDatabase') }}
-        </button>
+          <template v-if="!activeBackend?.disableUpgradeCore">
+            <div
+              v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.checkUpgrade`]"
+              class="setting-item"
+            >
+              <div class="setting-item-label">
+                <div>{{ $t('checkUpgrade') }}</div>
+                <div class="setting-item-note">
+                  Watch for core releases and surface update availability in the built-in UI.
+                </div>
+              </div>
+              <input
+                class="toggle"
+                type="checkbox"
+                v-model="checkUpgradeCore"
+                @change="handlerCheckUpgradeCoreChange"
+              />
+            </div>
+            <div
+              v-if="
+                checkUpgradeCore && !hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.autoUpgrade`]
+              "
+              class="setting-item"
+            >
+              <div class="setting-item-label">
+                <div>{{ $t('autoUpgrade') }}</div>
+                <div class="setting-item-note">
+                  Apply core upgrades automatically when update checks are enabled.
+                </div>
+              </div>
+              <input
+                class="toggle"
+                type="checkbox"
+                v-model="autoUpgradeCore"
+              />
+            </div>
+          </template>
+        </div>
       </template>
-      <button
-        class="btn btn-sm"
-        @click="handleFlushDNSCache"
+
+      <div
+        v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.actions`]"
+        class="divider"
+      ></div>
+
+      <div
+        v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.actions`]"
+        class="grid max-w-6xl gap-2 gap-y-3"
+        :style="`grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));`"
       >
-        {{ $t('flushDNSCache') }}
-      </button>
-      <button
-        class="btn btn-sm"
-        @click="handleFlushFakeIP"
-      >
-        {{ $t('flushFakeIP') }}
-      </button>
-      <button
-        v-if="hasSmartGroup"
-        class="btn btn-sm"
-        @click="flushSmartGroupWeightsAPI"
-      >
-        {{ $t('flushSmartWeights') }}
-      </button>
+        <template v-if="!isSingBox || displayAllFeatures">
+          <button
+            v-if="!activeBackend?.disableUpgradeCore"
+            class="btn btn-primary btn-sm"
+            @click="showUpgradeCoreModal = true"
+          >
+            {{ $t('upgradeCore') }}
+          </button>
+          <button
+            class="btn btn-sm"
+            @click="handlerClickRestartCore"
+          >
+            <span
+              v-if="isCoreRestarting"
+              class="loading loading-spinner loading-md"
+            ></span>
+            {{ $t('restartCore') }}
+          </button>
+          <button
+            class="btn btn-sm"
+            @click="handlerClickReloadConfigs"
+          >
+            <span
+              v-if="isConfigReloading"
+              class="loading loading-spinner loading-md"
+            ></span>
+            {{ $t('reloadConfigs') }}
+          </button>
+          <button
+            class="btn btn-sm"
+            @click="handlerClickUpdateGeo"
+          >
+            <span
+              v-if="isGeoUpdating"
+              class="loading loading-spinner loading-md"
+            ></span>
+            {{ $t('updateGeoDatabase') }}
+          </button>
+        </template>
+        <button
+          class="btn btn-sm"
+          @click="handleFlushDNSCache"
+        >
+          {{ $t('flushDNSCache') }}
+        </button>
+        <button
+          class="btn btn-sm"
+          @click="handleFlushFakeIP"
+        >
+          {{ $t('flushFakeIP') }}
+        </button>
+        <button
+          v-if="hasSmartGroup"
+          class="btn btn-sm"
+          @click="flushSmartGroupWeightsAPI"
+        >
+          {{ $t('flushSmartWeights') }}
+        </button>
+      </div>
+      <div
+        v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.dnsQuery`]"
+        class="divider"
+      ></div>
+      <DnsQuery v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.dnsQuery`]" />
+      <UpgradeCoreModal v-model="showUpgradeCoreModal" />
     </div>
-    <div
-      v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.dnsQuery`]"
-      class="divider"
-    ></div>
-    <DnsQuery v-if="!hiddenSettingsItems[`${SETTINGS_MENU_KEY.backend}.dnsQuery`]" />
-    <UpgradeCoreModal v-model="showUpgradeCoreModal" />
   </div>
 </template>
 

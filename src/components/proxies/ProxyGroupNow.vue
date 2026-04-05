@@ -1,26 +1,30 @@
 <template>
   <template v-if="proxyGroup.now">
-    <Component
-      class="h-4 w-4 shrink-0 outline-none"
-      :is="isFixed ? LockClosedIcon : ArrowRightCircleIcon"
-      @mouseenter="tipForFixed"
-    />
+    <span class="bg-base-200/60 inline-flex min-w-0 items-center gap-1 rounded-full px-2 py-1">
+      <Component
+        class="h-4 w-4 shrink-0 outline-none"
+        :is="isFixed ? LockClosedIcon : ArrowRightCircleIcon"
+        @mouseenter="tipForFixed"
+      />
 
-    <ProxyName
-      :name="proxyGroup.now"
-      class="text-base-content/80 text-xs md:text-sm"
-    />
-    <template v-if="finalOutbound && displayFinalOutbound">
-      <ArrowRightCircleIcon class="h-4 w-4 shrink-0" />
       <ProxyName
-        :name="finalOutbound"
+        :name="proxyGroup.now"
         class="text-base-content/80 text-xs md:text-sm"
       />
+    </span>
+    <template v-if="finalOutbound && displayFinalOutbound">
+      <span class="bg-base-200/35 inline-flex min-w-0 items-center gap-1 rounded-full px-2 py-1">
+        <ArrowRightCircleIcon class="h-4 w-4 shrink-0" />
+        <ProxyName
+          :name="finalOutbound"
+          class="text-base-content/80 text-xs md:text-sm"
+        />
+      </span>
     </template>
   </template>
   <template v-else-if="proxyGroup.type.toLowerCase() === PROXY_TYPE.LoadBalance">
     <CheckCircleIcon class="h-4 w-4 shrink-0" />
-    <span class="text-base-content/80 text-xs md:text-sm">
+    <span class="bg-base-200/60 text-base-content/80 rounded-full px-2 py-1 text-xs md:text-sm">
       {{ $t('loadBalance') }}
     </span>
   </template>

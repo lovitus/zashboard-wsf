@@ -1,7 +1,12 @@
 <template>
-  <div class="card hover:bg-base-200 block p-2 text-sm break-all">
-    <div class="inline-flex items-center gap-2">
-      <div :style="{ minWidth: `${(seqWithPadding.length + 1) * 0.62}em` }">
+  <div
+    class="border-base-content/8 bg-base-100/70 hover:bg-base-200/70 block rounded-2xl border p-3 text-sm break-all transition-colors"
+  >
+    <div class="inline-flex flex-wrap items-center gap-2">
+      <div
+        class="text-base-content/45 font-mono text-xs"
+        :style="{ minWidth: `${(seqWithPadding.length + 1) * 0.62}em` }"
+      >
         {{ seqWithPadding }}.
       </div>
       <span class="badge badge-sm text-main min-w-14">
@@ -15,7 +20,7 @@
       </span>
     </div>
 
-    <span class="leading-6 max-md:mt-2 max-md:block md:ml-2">{{ log.payload }}</span>
+    <span class="text-base-content/88 mt-2 block leading-6">{{ log.payload }}</span>
   </div>
 </template>
 

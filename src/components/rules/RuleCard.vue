@@ -1,10 +1,10 @@
 <template>
   <div
-    class="card"
+    class="zb-panel"
     :class="{ 'opacity-50': isDisabled }"
   >
     <div
-      class="flex flex-col gap-2 overflow-hidden p-2 text-sm"
+      class="flex flex-col gap-2 overflow-hidden p-3 text-sm"
       :class="{
         'cursor-pointer': isSelectable,
       }"
@@ -14,7 +14,7 @@
         <span>{{ index }}.</span>
         <span class="ml-2">{{ rule.type }}</span>
         <span
-          class="text-main ml-2"
+          class="text-main ml-2 font-medium"
           v-if="rule.payload"
         >
           {{ rule.payload }}

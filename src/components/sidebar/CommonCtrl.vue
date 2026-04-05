@@ -1,10 +1,16 @@
 <template>
-  <div class="flex flex-col gap-2 p-2 text-sm">
-    <StatisticsStats type="ctrl" />
-    <BackendSwitch :disable-edit-backend="true" />
-    <div class="flex gap-2">
+  <div class="flex flex-col gap-3 p-3 text-sm">
+    <div class="zb-panel-inset p-3">
+      <StatisticsStats type="ctrl" />
+    </div>
+    <div class="zb-panel-inset p-3">
+      <BackendSwitch :disable-edit-backend="true" />
+    </div>
+    <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
       <SidebarButtons />
-      <BackendVersion />
+      <div class="text-base-content/60 flex items-center justify-end text-xs">
+        <BackendVersion />
+      </div>
     </div>
   </div>
 </template>
