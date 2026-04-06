@@ -317,8 +317,8 @@ jobs:
 
       - name: Build Android APK (${{ matrix.abi }})
         run: |
-          # Build single ABI APK
-          pnpm tauri android build --apk --target ${{ matrix.rust-target }}
+          # Build single ABI APK - use Android ABI format for --target
+          pnpm tauri android build --apk --target ${{ matrix.abi }}
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
