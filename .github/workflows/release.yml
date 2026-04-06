@@ -151,9 +151,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: '[EST] Zashboard v__VERSION__'
+          releaseName: '[${{ github.event.head_commit.timestamp }} EST] Zashboard v__VERSION__'
           releaseBody: |
-            ## Zashboard v__VERSION__ (EST)
+            ## Zashboard v__VERSION__
 
             ### Changes in this release
 
