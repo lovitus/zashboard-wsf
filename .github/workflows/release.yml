@@ -182,6 +182,22 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            rust-target: aarch64-linux-android
+            sidecar-suffix: linux-arm64
+          - abi: armeabi-v7a
+            rust-target: armv7-linux-androideabi
+            sidecar-suffix: linux-armv7
+          - abi: x86_64
+            rust-target: x86_64-linux-android
+            sidecar-suffix: linux-amd64
+          - abi: x86
+            rust-target: i686-linux-android
+            sidecar-suffix: linux-386
     steps:
       - uses: actions/checkout@v4
 
@@ -208,7 +224,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: ${{ matrix.rust-target }}
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -219,36 +235,27 @@ jobs:
       - name: Download sidecar binaries into jniLibs
         run: |
           JNILIBS="src-tauri/gen/android/app/src/main/jniLibs"
+          ABI="${{ matrix.abi }}"
+          SUFFIX="${{ matrix.sidecar-suffix }}"
 
-          # ABI → Go release asset suffix
-          declare -A ABI_MAP=(
-            ["arm64-v8a"]="linux-arm64"
-            ["armeabi-v7a"]="linux-armv7"
-            ["x86"]="linux-386"
-            ["x86_64"]="linux-amd64"
-          )
+          mkdir -p "$JNILIBS/$ABI"
 
-          for ABI in arm64-v8a armeabi-v7a x86 x86_64; do
-            mkdir -p "$JNILIBS/$ABI"
-            SUFFIX="${ABI_MAP[$ABI]}"
+          # gust
+          gh release download "$GUST_TAG" --repo lovitus/gust \
+            -p "gost-${SUFFIX}-${GUST_VERSION}.gz" -D /tmp
+          gunzip -f "/tmp/gost-${SUFFIX}-${GUST_VERSION}.gz"
+          mv "/tmp/gost-${SUFFIX}-${GUST_VERSION}" "$JNILIBS/$ABI/libgust.so"
+          chmod +x "$JNILIBS/$ABI/libgust.so"
 
-            # gust
-            gh release download "$GUST_TAG" --repo lovitus/gust \
-              -p "gost-${SUFFIX}-${GUST_VERSION}.gz" -D /tmp
-            gunzip -f "/tmp/gost-${SUFFIX}-${GUST_VERSION}.gz"
-            mv "/tmp/gost-${SUFFIX}-${GUST_VERSION}" "$JNILIBS/$ABI/libgust.so"
-            chmod +x "$JNILIBS/$ABI/libgust.so"
+          # slider
+          gh release download "$SLIDER_TAG" --repo lovitus/slider \
+            -p "slider-${SUFFIX}-${SLIDER_VERSION}.gz" -D /tmp
+          gunzip -f "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}.gz"
+          mv "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}" "$JNILIBS/$ABI/libslider.so"
+          chmod +x "$JNILIBS/$ABI/libslider.so"
 
-            # slider
-            gh release download "$SLIDER_TAG" --repo lovitus/slider \
-              -p "slider-${SUFFIX}-${SLIDER_VERSION}.gz" -D /tmp
-            gunzip -f "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}.gz"
-            mv "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}" "$JNILIBS/$ABI/libslider.so"
-            chmod +x "$JNILIBS/$ABI/libslider.so"
-          done
-
-          echo "=== jniLibs ==="
-          find "$JNILIBS" -type f -exec ls -lh {} \;
+          echo "=== jniLibs for $ABI ==="
+          find "$JNILIBS/$ABI" -type f -exec ls -lh {} \;
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -270,9 +277,9 @@ jobs:
           </network-security-config>
           NSEOF
 
-          # Use Python for robust XML manipulation (avoids sed mangling)
+          # Use Python for robust XML manipulation
           python3 << 'PYEOF'
-          import re, sys
+          import re
 
           manifest_path = "src-tauri/gen/android/app/src/main/AndroidManifest.xml"
           with open(manifest_path, "r") as f:
@@ -307,22 +314,21 @@ jobs:
 
           echo "=== AndroidManifest.xml ==="
           cat "$MANIFEST"
-          echo "=== network_security_config.xml ==="
-          cat "$RES_XML/network_security_config.xml"
 
-      - name: Build Android APK (split by ABI)
+      - name: Build Android APK (${{ matrix.abi }})
         run: |
-          # Build separate APKs for each architecture
-          pnpm tauri android build --apk --split-per-abi
+          # Build single ABI APK
+          pnpm tauri android build --apk --target ${{ matrix.rust-target }}
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
-      - name: Sign APKs (per ABI)
+      - name: Sign APK (${{ matrix.abi }})
         run: |
           set -euo pipefail
           KS_FILE="src-tauri/open-release.keystore"
           KEY_ALIAS="zashboard"
           KEY_PASS="zashboard-open-2026"
+          ABI="${{ matrix.abi }}"
 
           if [ ! -f "$KS_FILE" ]; then
             echo "ERROR: missing keystore file: $KS_FILE"
@@ -333,52 +339,55 @@ jobs:
           sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          # Find all APK files (split by ABI)
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release"
-          echo "=== APK files before signing ==="
-          find "$APK_DIR" -name "*.apk" -type f
+          # Find APK for this ABI
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${ABI}/release"
+          echo "=== APK files for $ABI ==="
+          find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || echo "No APKs found in $APK_DIR"
 
-          # Sign each APK
-          for UNSIGNED in $(find "$APK_DIR" -name "*.apk" -type f); do
-            echo "Processing: $UNSIGNED"
+          # Also check universal path as fallback
+          if [ ! -d "$APK_DIR" ] || [ -z "$(find "$APK_DIR" -name '*.apk' 2>/dev/null)" ]; then
+            APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release/${ABI}"
+            echo "=== Checking fallback path: $APK_DIR ==="
+            find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || true
+          fi
 
-            # Zipalign
-            "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
-            mv "${UNSIGNED}.aligned" "$UNSIGNED"
+          UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
+          if [ -z "$UNSIGNED" ]; then
+            echo "ERROR: No APK found for ABI: $ABI"
+            exit 1
+          fi
 
-            # Sign with apksigner
-            "$BT/apksigner" sign \
-              --ks "$KS_FILE" \
-              --ks-pass pass:"$KEY_PASS" \
-              --ks-key-alias "$KEY_ALIAS" \
-              --key-pass pass:"$KEY_PASS" \
-              "$UNSIGNED"
+          echo "Found APK: $UNSIGNED"
 
-            # Verify
-            "$BT/apksigner" verify --verbose "$UNSIGNED"
+          # Zipalign
+          "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
+          mv "${UNSIGNED}.aligned" "$UNSIGNED"
 
-            # Rename with architecture suffix
-            # Extract ABI from filename (e.g., app-arm64-v8a-release-unsigned.apk -> arm64-v8a)
-            BASENAME=$(basename "$UNSIGNED")
-            if [[ "$BASENAME" =~ app-(.+)-release ]]; then
-              ABI="${BASH_REMATCH[1]}"
-              SIGNED="${APK_DIR}/zashboard-${ABI}-release.apk"
-              mv "$UNSIGNED" "$SIGNED"
-              echo "Signed APK: $SIGNED"
-            else
-              echo "Signed APK: $UNSIGNED"
-            fi
-          done
+          # Sign with apksigner
+          "$BT/apksigner" sign \
+            --ks "$KS_FILE" \
+            --ks-pass pass:"$KEY_PASS" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass pass:"$KEY_PASS" \
+            "$UNSIGNED"
 
-          echo "=== Signed APK files ==="
-          find "$APK_DIR" -name "*.apk" -type f
+          # Verify
+          "$BT/apksigner" verify --verbose "$UNSIGNED"
 
-      - name: Upload APKs (per ABI)
+          # Rename to final name
+          SIGNED="${APK_DIR}/zashboard-${ABI}-release.apk"
+          mv "$UNSIGNED" "$SIGNED"
+          echo "Signed APK: $SIGNED"
+
+          # List directory
+          ls -la "$APK_DIR"
+
+      - name: Upload APK (${{ matrix.abi }})
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           draft: false
           files: |
-            src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/${{ matrix.abi }}/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
