@@ -731,33 +731,34 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         
         var btnFs=document.createElement('button');
         btnFs.type='button';
-        btnFs.textContent='\u26F6 Fullscreen';
+        btnFs.textContent='\u2195 Pad Layout';
         btnFs.style.cssText='display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.78);color:#1f2937;padding:12px 16px;border-radius:24px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:14px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;height:48px;pointer-events:auto;';
         btnFs.onmouseenter=function(){btnFs.style.background='rgba(255,255,255,.95)';resetAutoClose();};
         btnFs.onmouseleave=function(){btnFs.style.background='rgba(255,255,255,.78)';};
+        
+        var isPadded = false;
         btnFs.onclick=function(ev){
           try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
-          try {
-            if (!document.fullscreenElement) {
-                if (document.documentElement.requestFullscreen) {
-                    document.documentElement.requestFullscreen();
-                } else if (document.documentElement.webkitRequestFullscreen) {
-                    document.documentElement.webkitRequestFullscreen();
-                }
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                } else if (document.webkitExitFullscreen) {
-                    document.webkitExitFullscreen();
-                }
-            }
-          } catch(err) { console.error(err); }
+          var container = document.querySelector('#app') || document.querySelector('#root') || document.body;
+          var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, bottom:34};
+          
+          if (!isPadded) {
+              container.style.setProperty('padding-top', (insets.top||47) + 'px', 'important');
+              container.style.setProperty('padding-bottom', (insets.bottom||34) + 'px', 'important');
+              container.style.setProperty('box-sizing', 'border-box', 'important');
+              container.style.setProperty('min-height', '100vh', 'important');
+              btnFs.textContent = '\u21A5 Reset Layout';
+              isPadded = true;
+          } else {
+              container.style.removeProperty('padding-top');
+              container.style.removeProperty('padding-bottom');
+              btnFs.textContent = '\u2195 Pad Layout';
+              isPadded = false;
+          }
+
           setFabOpen(false);
           return false;
         };
-        document.addEventListener('fullscreenchange', function() {
-            btnFs.textContent = document.fullscreenElement ? '\u2ADF Exit Fullscreen' : '\u26F6 Fullscreen';
-        });
 
         menu.appendChild(btnBuiltin);
         menu.appendChild(btnFs);
