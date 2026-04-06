@@ -186,6 +186,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Only build most common architectures (speeds up CI)
           - abi: arm64-v8a
             rust-target: aarch64-linux-android
             tauri-target: aarch64
@@ -194,14 +195,15 @@ jobs:
             rust-target: armv7-linux-androideabi
             tauri-target: armv7
             sidecar-suffix: linux-armv7
-          - abi: x86_64
-            rust-target: x86_64-linux-android
-            tauri-target: x86_64
-            sidecar-suffix: linux-amd64
-          - abi: x86
-            rust-target: i686-linux-android
-            tauri-target: i686
-            sidecar-suffix: linux-386
+          # x86 and x86_64 are rare on Android, skip for faster builds
+          # - abi: x86_64
+          #   rust-target: x86_64-linux-android
+          #   tauri-target: x86_64
+          #   sidecar-suffix: linux-amd64
+          # - abi: x86
+          #   rust-target: i686-linux-android
+          #   tauri-target: i686
+          #   sidecar-suffix: linux-386
     steps:
       - uses: actions/checkout@v4
 
