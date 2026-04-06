@@ -43,10 +43,6 @@
   "plugins": {
     "shell": {
       "open": true
-    },
-    "android": {
-      "theme": "AppTheme",
-      "minSdkVersion": 24
     }
   }
 }

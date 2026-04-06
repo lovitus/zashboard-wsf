@@ -182,19 +182,6 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        abi: [arm64-v8a, armeabi-v7a]
-        include:
-          - abi: arm64-v8a
-            tauri-abi: arm64
-            rust-target: aarch64-linux-android
-            sidecar-suffix: linux-arm64
-          - abi: armeabi-v7a
-            tauri-abi: arm
-            rust-target: armv7-linux-androideabi
-            sidecar-suffix: linux-armv7
     steps:
       - uses: actions/checkout@v4
 
@@ -271,23 +258,13 @@ jobs:
           if "ACCESS_NETWORK_STATE" not in content:
               content = content.replace("</manifest>", '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n</manifest>')
 
-          if "android:extractNativeLibs" not in content:
-              content = content.replace("<application", '<application android:extractNativeLibs="true"', 1)
-          if "android:usesCleartextTraffic" not in content:
-              content = content.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
-          if "android:networkSecurityConfig" not in content:
-              content = content.replace("<application", '<application android:networkSecurityConfig="@xml/network_security_config"', 1)
-          if "windowSoftInputMode" not in content:
-              content = content.replace("<activity", '<activity android:windowSoftInputMode="adjustResize"', 1)
-
           with open(manifest_path, "w") as f:
               f.write(content)
           EOF
 
       - name: Build Android APK
         run: |
-          # Use --split-per-abi to generate ABI-specific APKs
-          pnpm tauri android build --apk --split-per-abi
+          pnpm tauri android build --apk
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
@@ -296,24 +273,19 @@ jobs:
           sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          # When using --split-per-abi, APKs are in Tauri ABI subdirectories
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${{ matrix.tauri-abi }}/release"
-          
-          echo "=== APK files for ${{ matrix.abi }} (Tauri ABI: ${{ matrix.tauri-abi }}) ==="
-          echo "Checking: $APK_DIR"
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release"
+          echo "=== APK files in $APK_DIR ==="
           find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || echo "No APKs found in $APK_DIR"
 
-          # Find the APK for this specific ABI
           UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
           if [ -z "$UNSIGNED" ]; then
-            echo "ERROR: No APK found for ${{ matrix.abi }} (Tauri ABI: ${{ matrix.tauri-abi }})"
+            echo "ERROR: No APK found"
             find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null || true
             exit 1
           fi
 
           echo "Found APK: $UNSIGNED"
 
-          # Zipalign and sign
           "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
           mv "${UNSIGNED}.aligned" "$UNSIGNED"
 
@@ -326,16 +298,14 @@ jobs:
 
           "$BT/apksigner" verify --verbose "$UNSIGNED"
 
-          # Rename to include Android ABI name
-          DIR=$(dirname "$UNSIGNED")
-          mv "$UNSIGNED" "${DIR}/zashboard-${{ matrix.abi }}-release.apk"
-          echo "Signed: ${DIR}/zashboard-${{ matrix.abi }}-release.apk"
+          mv "$UNSIGNED" "${APK_DIR}/zashboard-release.apk"
+          echo "Signed: ${APK_DIR}/zashboard-release.apk"
 
       - name: Upload APK
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           draft: false
-          files: src-tauri/gen/android/app/build/outputs/apk/**/zashboard-${{ matrix.abi }}-release.apk
+          files: src-tauri/gen/android/app/build/outputs/apk/**/zashboard-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
