@@ -737,17 +737,25 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         btnFs.onmouseleave=function(){btnFs.style.background='rgba(255,255,255,.78)';};
         
         var isPadded = false;
-        var oldStyles = '';
+        var oldStyles = []; // [element, style]
         btnFs.onclick=function(ev){
           try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
-          var container = document.querySelector('#app') || document.querySelector('#root') || document.body;
+          var container = document.querySelector('#app') || document.querySelector('#root') || document.querySelector('main') || document.body;
           var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, bottom:34};
           
           if (!isPadded) {
-              oldStyles = container.getAttribute('style') || '';
-              // Use fixed positioning to force a 'safe window'
+              oldStyles = [
+                {el: container, style: container.getAttribute('style')},
+                {el: document.documentElement, style: document.documentElement.getAttribute('style')},
+                {el: document.body, style: document.body.getAttribute('style')}
+              ];
+              
               var top = (insets.top || 47) + 'px';
               var bottom = (insets.bottom || 34) + 'px';
+              var bg = window.getComputedStyle(container).backgroundColor;
+              if (!bg || bg==='transparent' || bg==='rgba(0, 0, 0, 0)') bg = window.getComputedStyle(document.body).backgroundColor;
+
+              // Force safe boundaries
               container.style.setProperty('position', 'fixed', 'important');
               container.style.setProperty('top', top, 'important');
               container.style.setProperty('bottom', bottom, 'important');
@@ -755,16 +763,21 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
               container.style.setProperty('right', '0', 'important');
               container.style.setProperty('height', 'auto', 'important');
               container.style.setProperty('margin', '0', 'important');
+              container.style.setProperty('overflow', 'auto', 'important');
               container.style.setProperty('box-sizing', 'border-box', 'important');
-              
-              // Ensure body background covers the 'dead zone' if needed
-              document.body.style.backgroundColor = window.getComputedStyle(container).backgroundColor;
+              container.style.setProperty('z-index', '1', 'important');
+
+              document.documentElement.style.setProperty('overflow', 'hidden', 'important');
+              document.body.style.setProperty('overflow', 'hidden', 'important');
+              document.body.style.setProperty('background-color', bg, 'important');
               
               btnFs.textContent = '\u21A5 Reset Layout';
               isPadded = true;
           } else {
-              if (oldStyles) container.setAttribute('style', oldStyles);
-              else container.removeAttribute('style');
+              oldStyles.forEach(function(item){
+                if(item.style) item.el.setAttribute('style', item.style);
+                else item.el.removeAttribute('style');
+              });
               btnFs.textContent = '\u2195 Pad Layout';
               isPadded = false;
           }
