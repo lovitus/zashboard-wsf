@@ -770,21 +770,24 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 
 const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 (function(){
+  // Only run on upstream UI (localhost/127.0.0.1), NOT on built-in UI
+  var isUpstreamUI = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
+  if (!isUpstreamUI) return;
+  
   if(window.__WSF_SAFE_AREA_PATCHED__) return;
   window.__WSF_SAFE_AREA_PATCHED__=true;
 
-  var insets={top:0,right:0,bottom:0,left:0};
-  var envRe=/env\(\s*safe-area-inset-(top|right|bottom|left)\s*(,[^)]+)?\)/gi;
+  // Read insets from server-injected global var, or use defaults
+  var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, right:0, bottom:34, left:0};
+  if(!insets.top && !insets.bottom) return;
 
-  function readInsets(){
-    try{
-      var s=getComputedStyle(document.documentElement);
-      insets.top=parseFloat(s.getPropertyValue('--wsf-sai-top'))||0;
-      insets.right=parseFloat(s.getPropertyValue('--wsf-sai-right'))||0;
-      insets.bottom=parseFloat(s.getPropertyValue('--wsf-sai-bottom'))||0;
-      insets.left=parseFloat(s.getPropertyValue('--wsf-sai-left'))||0;
-    }catch(_){}
-  }
+  // Inject CSS variables dynamically
+  var style = document.createElement('style');
+  style.id = '__wsf_sai_vars';
+  style.textContent = ':root{--wsf-sai-top:'+insets.top+'px;--wsf-sai-right:'+insets.right+'px;--wsf-sai-bottom:'+insets.bottom+'px;--wsf-sai-left:'+insets.left+'px;}';
+  document.head.appendChild(style);
+
+  var envRe=/env\(\s*safe-area-inset-(top|right|bottom|left)\s*(,[^)]+)?\)/gi;
 
   function patchCSS(text){
     return text.replace(envRe,function(m,d){return insets[d]+'px';});
@@ -792,7 +795,6 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 
   // Patch all stylesheets
   function patchSheets(){
-    if(insets.top===0&&insets.bottom===0)return;
     try{
       for(var i=0;i<document.styleSheets.length;i++){
         var sheet=document.styleSheets[i];
@@ -816,7 +818,6 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 
   // Patch inline styles
   function patchInline(el){
-    if(insets.top===0&&insets.bottom===0)return;
     try{
       var s=el.getAttribute('style');
       if(!s||!envRe.test(s))return;
@@ -825,38 +826,17 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   }
 
   function run(){
-    readInsets();
-    if(insets.top>0||insets.bottom>0){
-      patchSheets();
-      document.querySelectorAll('[style*="safe-area"]').forEach(patchInline);
-    }
+    patchSheets();
+    document.querySelectorAll('[style*="safe-area"]').forEach(patchInline);
   }
 
-  // Wait for DOM and styles to be ready
-  function init(){
-    // Retry a few times to ensure CSS variables are parsed
-    var attempts=0;
-    function tryRun(){
-      readInsets();
-      if((insets.top>0||insets.bottom>0)||attempts++>5){
-        run();
-      }else{
-        setTimeout(tryRun,50);
-      }
-    }
-    tryRun();
-    setTimeout(run,100);
-    setTimeout(run,300);
-    setTimeout(run,1000);
-  }
+  // Run immediately and after delays
+  run();
+  setTimeout(run,100);
+  setTimeout(run,500);
+  setTimeout(run,1500);
 
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',init,{once:true});
-  }else{
-    init();
-  }
-
-  // Watch for new stylesheets and elements
+  // Watch for new stylesheets
   if(window.MutationObserver){
     new MutationObserver(function(ms){
       var needsPatch=false;
@@ -1379,7 +1359,7 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>, safe_area_insets
     // Inject scripts right after <head> so they run before SPA bundles.
     let mut head_scripts = String::new();
 
-    // Inject real safe area inset values as CSS custom properties.
+    // Inject safe area insets as a global JS variable for upstream UI patches.
     // Format: "top,right,bottom,left" in px (e.g. "47,0,34,0").
     if let Some(insets) = safe_area_insets {
         let parts: Vec<&str> = insets.split(',').collect();
@@ -1389,7 +1369,7 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>, safe_area_insets
             let bottom = parts[2].trim();
             let left = parts[3].trim();
             head_scripts.push_str(&format!(
-                "<style id=\"__wsf_sai\">:root{{--wsf-sai-top:{}px;--wsf-sai-right:{}px;--wsf-sai-bottom:{}px;--wsf-sai-left:{}px;}}</style>",
+                "<script>window.__WSF_SAFE_AREA_INSETS__={{{{top:{},right:{},bottom:{},left:{}}}}};</script>",
                 top, right, bottom, left
             ));
         }
