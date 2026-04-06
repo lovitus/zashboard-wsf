@@ -394,6 +394,7 @@ fn extract_zip(bytes: &[u8], version_dir: &PathBuf) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn ui_activate_version(
+    window: tauri::Window,
     state: State<'_, Mutex<UiManagerState>>,
     tag: String,
     storage_data: Option<String>,
@@ -426,6 +427,8 @@ pub async fn ui_activate_version(
     s.safe_area_insets = safe_area_insets;
     write_active_version(&s.base_dir, Some(&tag));
 
+    let _ = window.set_fullscreen(true);
+
     let url = format!("http://127.0.0.1:{}", port);
     eprintln!("Activated upstream UI version {} at {}", tag, url);
     Ok(url)
@@ -433,6 +436,7 @@ pub async fn ui_activate_version(
 
 #[tauri::command]
 pub async fn ui_deactivate(
+    window: tauri::Window,
     state: State<'_, Mutex<UiManagerState>>,
 ) -> Result<String, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
@@ -450,6 +454,8 @@ pub async fn ui_deactivate(
     write_active_version(&s.base_dir, None);
     write_storage_data(&s.base_dir, None);
     write_safe_area_insets(&s.base_dir, None);
+
+    let _ = window.set_fullscreen(false);
 
     eprintln!("Deactivated upstream UI, switched to built-in");
     Ok("Switched to built-in UI".to_string())
