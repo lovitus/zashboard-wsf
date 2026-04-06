@@ -776,97 +776,46 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   function getInsets(){
     try{
       var s=getComputedStyle(document.documentElement);
-      return {
+      return{
         top:parseFloat(s.getPropertyValue('--wsf-sai-top'))||0,
         right:parseFloat(s.getPropertyValue('--wsf-sai-right'))||0,
         bottom:parseFloat(s.getPropertyValue('--wsf-sai-bottom'))||0,
         left:parseFloat(s.getPropertyValue('--wsf-sai-left'))||0
       };
-    }catch(_){return {top:0,right:0,bottom:0,left:0};}
+    }catch(_){return{top:0,right:0,bottom:0,left:0};}
   }
 
-  function injectOverrides(){
+  var i=getInsets();
+  if(i.top===0&&i.bottom===0)return;
+
+  // Build CSS that forces safe area on common containers
+  var css='';
+  css+='html{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important;box-sizing:border-box!important}';
+  css+='body{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important;box-sizing:border-box!important}';
+  css+='[id="app"],[id="__nuxt"],[id="root"],[id="app-content"]{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important}';
+  css+='main,header,footer,nav,section{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important}';
+  // Force fixed bottom elements to sit above safe area
+  css+='[style*="position:fixed"],[style*="position: absolute"],[style*="position:absolute"]{padding-bottom:'+i.bottom+'px!important}';
+  css+='[style*="bottom:0"],[style*="bottom: 0"]{bottom:'+i.bottom+'px!important}';
+
+  var style=document.createElement('style');
+  style.id='__wsf_safe_area';
+  style.textContent=css;
+  (document.head||document.documentElement).appendChild(style);
+
+  // Also patch any inline styles that reference env()
+  var envRe=/env\(\s*safe-area-inset-(top|bottom|left|right)\s*(,[^)]+)?\)/gi;
+  function patch(el){
     try{
-      var i=getInsets();
-      if(i.top===0&&i.bottom===0&&i.left===0&&i.right===0) return;
-
-      var css='';
-      // Override common safe-area patterns with !important
-      // Padding
-      css+='[style*="padding-top:env(safe-area-inset-top)"]{padding-top:'+i.top+'px!important}';
-      css+='[style*="padding-bottom:env(safe-area-inset-bottom)"]{padding-bottom:'+i.bottom+'px!important}';
-      css+='[style*="padding-left:env(safe-area-inset-left)"]{padding-left:'+i.left+'px!important}';
-      css+='[style*="padding-right:env(safe-area-inset-right)"]{padding-right:'+i.right+'px!important}';
-      // Margin
-      css+='[style*="margin-top:env(safe-area-inset-top)"]{margin-top:'+i.top+'px!important}';
-      css+='[style*="margin-bottom:env(safe-area-inset-bottom)"]{margin-bottom:'+i.bottom+'px!important}';
-      css+='[style*="margin-left:env(safe-area-inset-left)"]{margin-left:'+i.left+'px!important}';
-      css+='[style*="margin-right:env(safe-area-inset-right)"]{margin-right:'+i.right+'px!important}';
-      // Top/Right/Bottom/Left positioning
-      css+='[style*="top:env(safe-area-inset-top)"]{top:'+i.top+'px!important}';
-      css+='[style*="bottom:env(safe-area-inset-bottom)"]{bottom:'+i.bottom+'px!important}';
-      css+='[style*="left:env(safe-area-inset-left)"]{left:'+i.left+'px!important}';
-      css+='[style*="right:env(safe-area-inset-right)"]{right:'+i.right+'px!important}';
-      // Height with env
-      css+='[style*="height:env(safe-area-inset-top)"]{height:'+i.top+'px!important}';
-      css+='[style*="height:env(safe-area-inset-bottom)"]{height:'+i.bottom+'px!important}';
-      // calc() patterns
-      css+='[style*="env(safe-area-inset-top))"]{padding-top:'+i.top+'px!important}';
-      css+='[style*="env(safe-area-inset-bottom))"]{padding-bottom:'+i.bottom+'px!important}';
-      // Override html/body padding that might be set by upstream
-      css+='html{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important}';
-
-      var style=document.createElement('style');
-      style.id='__wsf_sai_override';
-      style.textContent=css;
-      (document.head||document.documentElement).appendChild(style);
-
-      // Patch inline styles directly too (for dynamic elements)
-      function patchEl(el){
-        try{
-          var s=el.getAttribute('style');
-          if(!s||s.indexOf('safe-area')===-1) return;
-          var patched=s
-            .replace(/env\(\s*safe-area-inset-top\s*(,[^)]+)?\)/gi,i.top+'px')
-            .replace(/env\(\s*safe-area-inset-right\s*(,[^)]+)?\)/gi,i.right+'px')
-            .replace(/env\(\s*safe-area-inset-bottom\s*(,[^)]+)?\)/gi,i.bottom+'px')
-            .replace(/env\(\s*safe-area-inset-left\s*(,[^)]+)?\)/gi,i.left+'px');
-          if(patched!==s) el.setAttribute('style',patched);
-        }catch(_){}
-      }
-
-      // Initial patch
-      document.querySelectorAll('[style*="safe-area"]').forEach(patchEl);
-
-      // Observe for dynamic changes
-      if(window.MutationObserver){
-        new MutationObserver(function(muts){
-          muts.forEach(function(m){
-            if(m.type==='attributes'&&m.attributeName==='style'){
-              patchEl(m.target);
-            }else if(m.type==='childList'){
-              m.addedNodes.forEach(function(n){
-                if(n.nodeType===1){
-                  patchEl(n);
-                  if(n.querySelectorAll){
-                    n.querySelectorAll('[style*="safe-area"]').forEach(patchEl);
-                  }
-                }
-              });
-            }
-          });
-        }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
-      }
+      var s=el.getAttribute('style');
+      if(!s||!envRe.test(s))return;
+      el.setAttribute('style',s.replace(envRe,function(m,d){return({top:i.top,bottom:i.bottom,left:i.left,right:i.right}[d]||0)+'px';}));
     }catch(_){}
   }
-
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',injectOverrides,{once:true});
-  }else{
-    injectOverrides();
+  document.querySelectorAll('[style*="safe-area"]').forEach(patch);
+  if(window.MutationObserver){
+    new MutationObserver(function(ms){ms.forEach(function(m){if(m.type==='childList'){m.addedNodes.forEach(function(n){if(n.nodeType===1){patch(n);if(n.querySelectorAll)n.querySelectorAll('[style*="safe-area"]').forEach(patch);}});}});}).observe(document.documentElement,{childList:true,subtree:true});
   }
-  setTimeout(injectOverrides,100);
-  setTimeout(injectOverrides,500);
 })();
 </script>"#;
 
