@@ -814,97 +814,93 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 
 const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 (function(){
-  // Only run on upstream UI (localhost/127.0.0.1), NOT on built-in UI
   if (!(location.hostname === '127.0.0.1' || location.hostname === 'localhost')) return;
-  
   if(window.__WSF_SAFE_AREA_PATCHED__) return;
   window.__WSF_SAFE_AREA_PATCHED__=true;
 
-  // Read insets from server-injected global var, or use sensible defaults
   var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, right:0, bottom:34, left:0};
   if(!insets.top && !insets.bottom) return;
 
-  // Force safe area padding on html and body using !important
-  // This is the most reliable method that works regardless of CSS framework
-  function applySafeArea(){
-    var html = document.documentElement;
-    var body = document.body;
-    
-    // Set CSS variables for any code that reads them
-    html.style.setProperty('--safe-area-inset-top', insets.top + 'px', 'important');
-    html.style.setProperty('--safe-area-inset-bottom', insets.bottom + 'px', 'important');
-    html.style.setProperty('--safe-area-inset-left', insets.left + 'px', 'important');
-    html.style.setProperty('--safe-area-inset-right', insets.right + 'px', 'important');
-    
-    // Also use wsf-prefixed versions
-    html.style.setProperty('--wsf-sai-top', insets.top + 'px', 'important');
-    html.style.setProperty('--wsf-sai-bottom', insets.bottom + 'px', 'important');
-    html.style.setProperty('--wsf-sai-left', insets.left + 'px', 'important');
-    html.style.setProperty('--wsf-sai-right', insets.right + 'px', 'important');
-    
-    // Force padding on body AND html to ensure top safe area works
-    if(body){
-      var computed = getComputedStyle(body);
-      var existingTop = parseFloat(computed.paddingTop) || 0;
-      var existingBottom = parseFloat(computed.paddingBottom) || 0;
-      
-      // Always ensure minimum top safe area padding
-      if(existingTop < insets.top){
-        body.style.setProperty('padding-top', insets.top + 'px', 'important');
-      }
-      if(existingBottom < insets.bottom){
-        body.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
-      }
-      
-      // Also set margin as a fallback (some frameworks use margin instead of padding)
-      var marginTop = parseFloat(getComputedStyle(body).marginTop) || 0;
-      if(marginTop < insets.top){
-        body.style.setProperty('margin-top', insets.top + 'px', 'important');
-      }
-    }
-    
-    // Force html padding too (some SPAs set html height:100% and body scrolls)
-    html.style.setProperty('padding-top', insets.top + 'px', 'important');
-    
-    // Target common fixed header containers that might overlap with safe area
-    var fixedHeaders = document.querySelectorAll('[class*="header"], [class*="Header"], [class*="app-bar"], [class*="AppBar"], [class*="navbar"], [class*="Navbar"]');
-    fixedHeaders.forEach(function(header){
-      var cs = getComputedStyle(header);
-      if(cs.position === 'fixed' || cs.position === 'sticky'){
-        var currentTop = parseFloat(cs.top) || 0;
-        if(currentTop < insets.top){
-          header.style.setProperty('top', insets.top + 'px', 'important');
-        }
-      }
-    });
-    
-    // Also try common container selectors
-    var selectors = ['#app', '#root', 'main', '.app', '.main', '[class*="app"]', '[class*="App"]'];
-    selectors.forEach(function(sel){
-      var el = document.querySelector(sel);
-      if(el && el !== body){
-        var cs = getComputedStyle(el);
-        var pt = parseFloat(cs.paddingTop) || 0;
-        var pb = parseFloat(cs.paddingBottom) || 0;
-        if(pt < insets.top) el.style.setProperty('padding-top', insets.top + 'px', 'important');
-        if(pb < insets.bottom) el.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
-      }
-    });
+  var root = document.documentElement;
+  root.style.setProperty('--safe-area-inset-top', insets.top + 'px');
+  root.style.setProperty('--safe-area-inset-bottom', insets.bottom + 'px');
+  root.style.setProperty('--safe-area-inset-left', insets.left + 'px');
+  root.style.setProperty('--safe-area-inset-right', insets.right + 'px');
+  root.style.setProperty('--wsf-sai-top', insets.top + 'px');
+  root.style.setProperty('--wsf-sai-bottom', insets.bottom + 'px');
+  root.style.setProperty('--wsf-sai-left', insets.left + 'px');
+  root.style.setProperty('--wsf-sai-right', insets.right + 'px');
+
+  var meta = document.querySelector('meta[name="viewport"]');
+  if(meta && meta.content.indexOf('viewport-fit=cover') === -1) {
+      meta.content += ', viewport-fit=cover';
   }
 
-  // Apply immediately and repeatedly
+  var style = document.createElement('style');
+  style.id = 'wsf-safe-area-style';
+  style.innerHTML = `
+    /* Safely pad main SPA containers, but only once. */
+    body > #app, body > #root {
+      padding-top: ${insets.top}px !important;
+      padding-bottom: ${insets.bottom}px !important;
+      box-sizing: border-box !important;
+    }
+    
+    /* Fallback if SPA mounts directly to body and has no known containers */
+    body:not(:has(#app)):not(:has(#root)) {
+      padding-top: ${insets.top}px !important;
+      padding-bottom: ${insets.bottom}px !important;
+    }
+  `;
+  document.head.appendChild(style);
+
+  function applySafeArea(){
+    var headers = document.querySelectorAll('[class*="header" i], [class*="app-bar" i], [class*="navbar" i]');
+    for(var i=0; i<headers.length; i++) {
+        var el = headers[i];
+        if (el.dataset.wsfPatched) continue;
+        var cs = getComputedStyle(el);
+        if (cs.position === 'fixed' || cs.position === 'sticky') {
+            var currTop = parseFloat(cs.top) || 0;
+            if (currTop < insets.top && cs.bottom !== '0px') {
+                el.style.setProperty('top', insets.top + 'px', 'important');
+                el.dataset.wsfPatched = "1";
+            }
+        }
+    }
+    
+    var footers = document.querySelectorAll('[class*="tab-bar" i], [class*="bottom-nav" i], [class*="footer" i]');
+    for(var j=0; j<footers.length; j++) {
+        var el = footers[j];
+        if (el.dataset.wsfPatched) continue;
+        var cs = getComputedStyle(el);
+        if (cs.position === 'fixed' || cs.position === 'sticky') {
+            var currBot = parseFloat(cs.bottom) || 0;
+            if (currBot < insets.bottom && cs.top !== '0px') {
+                el.style.setProperty('bottom', insets.bottom + 'px', 'important');
+                el.dataset.wsfPatched = "1";
+            }
+        }
+    }
+  }
+
   applySafeArea();
-  setTimeout(applySafeArea, 50);
-  setTimeout(applySafeArea, 200);
+  setTimeout(applySafeArea, 100);
   setTimeout(applySafeArea, 500);
-  setTimeout(applySafeArea, 1000);
-  setTimeout(applySafeArea, 2000);
+  setTimeout(applySafeArea, 1500);
   
-  // Re-apply when DOM changes
   if(window.MutationObserver){
-    new MutationObserver(function(){
-      applySafeArea();
-    }).observe(document.documentElement, {childList:true, subtree:true});
+    var observer = new MutationObserver(function(mutations){
+      var shouldApply = false;
+      for(var i=0; i<mutations.length; i++) {
+        if(mutations[i].addedNodes.length > 0) {
+          shouldApply = true;
+          break;
+        }
+      }
+      if(shouldApply) applySafeArea();
+    });
+    observer.observe(document.body, {childList: true, subtree: true});
   }
 })();
 </script>"#;

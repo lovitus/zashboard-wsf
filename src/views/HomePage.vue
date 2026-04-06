@@ -1,4 +1,4 @@
-<template>
+  <template>
   <div
     class="bg-base-200/50 home-page flex size-full"
     :class="isSidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'"
@@ -24,19 +24,19 @@
               @pointerdown.stop
             >
               <button
-                class="fab-menu-item"
-                @click.stop="handleFabSetup"
-              >
-                <Cog6ToothIcon class="h-4 w-4" />
-                <span>{{ $t('setup') }}</span>
-              </button>
-              <button
+                class="fab-menu-item item-builtin"
                 v-if="hasActiveUpstream"
-                class="fab-menu-item"
                 @click.stop="handleSwitchBuiltin"
               >
                 <ArrowLeftOnRectangleIcon class="h-4 w-4" />
                 <span>{{ $t('upstreamSwitchBuiltin') }}</span>
+              </button>
+              <button
+                class="fab-menu-item item-setup"
+                @click.stop="handleFabSetup"
+              >
+                <Cog6ToothIcon class="h-4 w-4" />
+                <span>{{ $t('setup') }}</span>
               </button>
             </div>
           </Transition>
@@ -48,7 +48,7 @@
             @click.stop="toggleFabMenu"
           >
             <XMarkIcon v-if="fabMenuOpen" class="h-5 w-5" />
-            <AdjustmentsHorizontalIcon v-else class="h-5 w-5" />
+            <Cog6ToothIcon v-else class="h-5 w-5" />
           </button>
         </div>
 
@@ -161,9 +161,10 @@ const fabPos = ref({ x: -1, y: -1 }) // -1 means unset → default placement
 
 const fabStyle = computed(() => {
   if (fabPos.value.x < 0) {
-    // default: bottom-right above the dock
+    // default: bottom-right
     return { right: `${FAB_MARGIN}px`, bottom: `calc(56px + ${mobileSafeInset} + ${FAB_MARGIN * 2}px)` }
   }
+  // To avoid menu going off-screen, keep X/Y properly constrained inside pointer drag logic
   return { left: `${fabPos.value.x}px`, top: `${fabPos.value.y}px` }
 })
 
@@ -219,16 +220,16 @@ const onFabPointerDown = (e: PointerEvent) => {
     const dy = ev.clientY - dragStartY
     movedDistance = Math.sqrt(dx * dx + dy * dy)
 
+    // Make sure menu doesn't overflow top boundary (assume menu height max 120px)
     const newX = Math.max(FAB_MARGIN, Math.min(window.innerWidth - FAB_SIZE - FAB_MARGIN, fabStartX + dx))
-    const newY = Math.max(FAB_MARGIN, Math.min(window.innerHeight - FAB_SIZE - FAB_MARGIN, fabStartY + dy))
+    const newY = Math.max(FAB_MARGIN + 120, Math.min(window.innerHeight - FAB_SIZE - FAB_MARGIN - 56, fabStartY + dy))
     fabPos.value = { x: newX, y: newY }
   }
 
   const onUp = () => {
     dragging = false
-    // if barely moved, treat as click → toggle handled by the inner button
     if (movedDistance < 6) {
-      fabPos.value = fabPos.value // no-op to avoid resetting
+      fabPos.value = fabPos.value
     }
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
@@ -383,10 +384,8 @@ checkUIUpdate()
 .fab-container {
   position: absolute;
   z-index: 50;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
+  width: 48px;
+  height: 48px;
   touch-action: none;
   user-select: none;
 }
@@ -401,26 +400,22 @@ checkUIUpdate()
   display: flex;
   align-items: center;
   justify-content: center;
-  color: oklch(var(--bc));
-  background: oklch(var(--b1) / 0.72);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow:
-    0 4px 16px oklch(var(--b3) / 0.4),
-    0 0 0 1px oklch(var(--b3) / 0.25);
+  color: #ffffff;
+  background: rgba(107, 114, 128, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
   transition:
     transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
-    box-shadow 0.18s ease,
     background 0.18s ease;
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .fab-btn:hover {
-  background: oklch(var(--b1) / 0.9);
-  box-shadow:
-    0 6px 24px oklch(var(--b3) / 0.5),
-    0 0 0 1px oklch(var(--p) / 0.3);
-  transform: scale(1.08);
+  background: rgba(107, 114, 128, 0.65);
+  transform: scale(1.05);
 }
 
 .fab-btn:active {
@@ -428,53 +423,58 @@ checkUIUpdate()
 }
 
 .fab-btn.fab-open {
-  background: oklch(var(--p));
-  color: oklch(var(--pc));
-  box-shadow:
-    0 6px 24px oklch(var(--p) / 0.45),
-    0 0 0 1px oklch(var(--p) / 0.5);
+  background: rgba(107, 114, 128, 0.65);
+  color: #ffffff;
   transform: rotate(90deg) scale(1.05);
 }
 
 /* ── Menu panel ────────────────────────────────────────────────── */
 .fab-menu {
+  position: absolute;
+  bottom: 56px;
+  right: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   align-items: flex-end;
-  padding-bottom: 2px;
+  z-index: 1;
 }
 
 .fab-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 12px 16px;
   border-radius: 24px;
   border: none;
   cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 500;
+  font-size: 14px;
+  line-height: 1;
   white-space: nowrap;
-  color: oklch(var(--bc));
-  background: oklch(var(--b1) / 0.82);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow:
-    0 2px 10px oklch(var(--b3) / 0.35),
-    0 0 0 1px oklch(var(--b3) / 0.2);
-  transition:
-    background 0.15s ease,
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 
-.fab-menu-item:hover {
-  background: oklch(var(--b1) / 0.96);
+.item-setup {
+  background: rgba(255, 255, 255, 0.85);
+  color: #1f2937;
+  border: 1px solid rgba(107, 114, 128, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.item-setup:hover {
+  background: rgba(255, 255, 255, 0.95);
   transform: translateX(-3px) scale(1.03);
-  box-shadow:
-    0 4px 18px oklch(var(--b3) / 0.45),
-    0 0 0 1px oklch(var(--p) / 0.25);
+}
+
+.item-builtin {
+  background: rgba(59, 130, 246, 0.88);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.item-builtin:hover {
+  background: rgba(59, 130, 246, 1);
+  transform: translateX(-3px) scale(1.03);
 }
 
 .fab-menu-item:active {
@@ -491,7 +491,7 @@ checkUIUpdate()
 .fab-menu-enter-from,
 .fab-menu-leave-to {
   opacity: 0;
-  transform: translateY(10px) scale(0.95);
+  transform: translateY(8px) scale(0.9);
 }
 
 /* ── Dock shadow spacer ────────────────────────────────────────── */
