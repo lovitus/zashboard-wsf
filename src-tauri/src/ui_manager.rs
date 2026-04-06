@@ -773,48 +773,106 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   if(window.__WSF_SAFE_AREA_PATCHED__) return;
   window.__WSF_SAFE_AREA_PATCHED__=true;
 
-  function getInsets(){
+  var insets={top:0,right:0,bottom:0,left:0};
+  var envRe=/env\(\s*safe-area-inset-(top|right|bottom|left)\s*(,[^)]+)?\)/gi;
+
+  function readInsets(){
     try{
       var s=getComputedStyle(document.documentElement);
-      return{
-        top:parseFloat(s.getPropertyValue('--wsf-sai-top'))||0,
-        right:parseFloat(s.getPropertyValue('--wsf-sai-right'))||0,
-        bottom:parseFloat(s.getPropertyValue('--wsf-sai-bottom'))||0,
-        left:parseFloat(s.getPropertyValue('--wsf-sai-left'))||0
-      };
-    }catch(_){return{top:0,right:0,bottom:0,left:0};}
+      insets.top=parseFloat(s.getPropertyValue('--wsf-sai-top'))||0;
+      insets.right=parseFloat(s.getPropertyValue('--wsf-sai-right'))||0;
+      insets.bottom=parseFloat(s.getPropertyValue('--wsf-sai-bottom'))||0;
+      insets.left=parseFloat(s.getPropertyValue('--wsf-sai-left'))||0;
+    }catch(_){}
   }
 
-  var i=getInsets();
-  if(i.top===0&&i.bottom===0)return;
+  function patchCSS(text){
+    return text.replace(envRe,function(m,d){return insets[d]+'px';});
+  }
 
-  // Build CSS that forces safe area on common containers
-  var css='';
-  css+='html{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important;box-sizing:border-box!important}';
-  css+='body{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important;box-sizing:border-box!important}';
-  css+='[id="app"],[id="__nuxt"],[id="root"],[id="app-content"]{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important}';
-  css+='main,header,footer,nav,section{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important}';
-  // Force fixed bottom elements to sit above safe area
-  css+='[style*="position:fixed"],[style*="position: absolute"],[style*="position:absolute"]{padding-bottom:'+i.bottom+'px!important}';
-  css+='[style*="bottom:0"],[style*="bottom: 0"]{bottom:'+i.bottom+'px!important}';
+  // Patch all stylesheets
+  function patchSheets(){
+    if(insets.top===0&&insets.bottom===0)return;
+    try{
+      for(var i=0;i<document.styleSheets.length;i++){
+        var sheet=document.styleSheets[i];
+        try{
+          var rules=sheet.cssRules||sheet.rules;
+          if(!rules)continue;
+          for(var j=rules.length-1;j>=0;j--){
+            var rule=rules[j];
+            if(rule.cssText&&envRe.test(rule.cssText)){
+              var newText=patchCSS(rule.cssText);
+              if(newText!==rule.cssText){
+                sheet.deleteRule(j);
+                sheet.insertRule(newText,j);
+              }
+            }
+          }
+        }catch(e){}
+      }
+    }catch(_){}
+  }
 
-  var style=document.createElement('style');
-  style.id='__wsf_safe_area';
-  style.textContent=css;
-  (document.head||document.documentElement).appendChild(style);
-
-  // Also patch any inline styles that reference env()
-  var envRe=/env\(\s*safe-area-inset-(top|bottom|left|right)\s*(,[^)]+)?\)/gi;
-  function patch(el){
+  // Patch inline styles
+  function patchInline(el){
+    if(insets.top===0&&insets.bottom===0)return;
     try{
       var s=el.getAttribute('style');
       if(!s||!envRe.test(s))return;
-      el.setAttribute('style',s.replace(envRe,function(m,d){return({top:i.top,bottom:i.bottom,left:i.left,right:i.right}[d]||0)+'px';}));
+      el.setAttribute('style',patchCSS(s));
     }catch(_){}
   }
-  document.querySelectorAll('[style*="safe-area"]').forEach(patch);
+
+  function run(){
+    readInsets();
+    if(insets.top>0||insets.bottom>0){
+      patchSheets();
+      document.querySelectorAll('[style*="safe-area"]').forEach(patchInline);
+    }
+  }
+
+  // Wait for DOM and styles to be ready
+  function init(){
+    // Retry a few times to ensure CSS variables are parsed
+    var attempts=0;
+    function tryRun(){
+      readInsets();
+      if((insets.top>0||insets.bottom>0)||attempts++>5){
+        run();
+      }else{
+        setTimeout(tryRun,50);
+      }
+    }
+    tryRun();
+    setTimeout(run,100);
+    setTimeout(run,300);
+    setTimeout(run,1000);
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',init,{once:true});
+  }else{
+    init();
+  }
+
+  // Watch for new stylesheets and elements
   if(window.MutationObserver){
-    new MutationObserver(function(ms){ms.forEach(function(m){if(m.type==='childList'){m.addedNodes.forEach(function(n){if(n.nodeType===1){patch(n);if(n.querySelectorAll)n.querySelectorAll('[style*="safe-area"]').forEach(patch);}});}});}).observe(document.documentElement,{childList:true,subtree:true});
+    new MutationObserver(function(ms){
+      var needsPatch=false;
+      ms.forEach(function(m){
+        if(m.type==='childList'){
+          m.addedNodes.forEach(function(n){
+            if(n.nodeType===1){
+              if(n.tagName==='STYLE'||n.tagName==='LINK')needsPatch=true;
+              patchInline(n);
+              if(n.querySelectorAll)n.querySelectorAll('[style*="safe-area"]').forEach(patchInline);
+            }
+          });
+        }
+      });
+      if(needsPatch)setTimeout(run,50);
+    }).observe(document.documentElement,{childList:true,subtree:true});
   }
 })();
 </script>"#;
