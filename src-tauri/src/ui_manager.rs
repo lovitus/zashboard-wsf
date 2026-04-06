@@ -1156,11 +1156,30 @@ fn handle_http_request(
 
     let file_path = root.join(&clean_path);
 
+    // Parse safe area insets once for this request
+    let (sai_top, sai_bottom) = safe_area_insets
+        .and_then(|s| {
+            let parts: Vec<&str> = s.split(',').collect();
+            if parts.len() == 4 {
+                let top = parts[0].trim().parse::<u32>().unwrap_or(0);
+                let bottom = parts[2].trim().parse::<u32>().unwrap_or(0);
+                Some((top, bottom))
+            } else {
+                None
+            }
+        })
+        .unwrap_or((0, 0));
+
     let (body, content_type) = if file_path.exists() && file_path.is_file() {
         let content =
             std::fs::read(&file_path).map_err(|e| format!("File read error: {}", e))?;
         let mime = mime_type(&clean_path);
-        if mime.starts_with("text/html") {
+        if mime.starts_with("text/css") && (sai_top > 0 || sai_bottom > 0) {
+            // Replace env() with actual pixel values in CSS
+            let css_str = String::from_utf8_lossy(&content);
+            let patched = patch_css_env(&css_str, sai_top, sai_bottom);
+            (patched.into_bytes(), mime)
+        } else if mime.starts_with("text/html") {
             (inject_scripts(&content, storage_data, safe_area_insets), mime)
         } else {
             (content, mime)
@@ -1416,6 +1435,21 @@ fn sync_state_with_disk(s: &mut UiManagerState) {
         s.server_shutdown = None;
         s.storage_data = None;
     }
+}
+
+fn patch_css_env(css: &str, top: u32, bottom: u32) -> String {
+    let mut result = css.to_string();
+    result = result.replace("env(safe-area-inset-top)", &format!("{}px", top));
+    result = result.replace("env(safe-area-inset-top, 0px)", &format!("{}px", top));
+    result = result.replace("env( safe-area-inset-top )", &format!("{}px", top));
+    result = result.replace("env(safe-area-inset-bottom)", &format!("{}px", bottom));
+    result = result.replace("env(safe-area-inset-bottom, 0px)", &format!("{}px", bottom));
+    result = result.replace("env( safe-area-inset-bottom )", &format!("{}px", bottom));
+    result = result.replace("env(safe-area-inset-left)", "0px");
+    result = result.replace("env(safe-area-inset-left, 0px)", "0px");
+    result = result.replace("env(safe-area-inset-right)", "0px");
+    result = result.replace("env(safe-area-inset-right, 0px)", "0px");
+    result
 }
 
 fn send_http_response(
