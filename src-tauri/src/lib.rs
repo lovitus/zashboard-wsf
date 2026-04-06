@@ -1,5 +1,4 @@
 mod ui_manager;
-mod safe_area;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -1019,28 +1018,9 @@ pub fn run() {
             ui_manager::ui_get_info,
             ui_manager::ui_delete_version,
             ui_manager::ui_set_custom_urls,
-            ui_manager::get_safe_area_insets,
         ])
         .setup(move |app| {
             ui_manager::set_app_handle(app.handle().clone());
-
-            // --- Safe Area Injection ---
-            if let Some(window) = app.get_webview_window("main") {
-                // 监听窗口事件，在适当时机注入安全区域
-                let window_clone = window.clone();
-                window.on_window_event(move |event| {
-                    match event {
-                        tauri::WindowEvent::Focused(_) => {
-                            // 窗口获得焦点时重新注入
-                            safe_area::inject_safe_area_to_webview(&window_clone);
-                        }
-                        _ => {}
-                    }
-                });
-                
-                // 初始注入（如果页面已经加载）
-                safe_area::inject_safe_area_to_webview(&window);
-            }
 
             // --- Mobile: fix config path using Tauri's app data dir ---
             #[cfg(mobile)]

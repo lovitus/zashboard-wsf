@@ -151,27 +151,29 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Zashboard v__VERSION__'
+          releaseName: '[${{ github.event.head_commit.timestamp }}] Zashboard v__VERSION__'
           releaseBody: |
-            Zashboard Native v__VERSION__
+            ## Zashboard v__VERSION__ (${{ github.event.head_commit.timestamp }})
 
-            Release assets for this tag are attached below.
+            ### Changes in this release
+            ${{ github.event.head_commit.message }}
 
-            Release type:
-            - ${{ contains(github.ref_name, '-') && 'Prerelease / test validation build' || 'Stable release' }}
+            ### Recent commits
+            ```
+            ${{ github.event.commits && join(github.event.commits.*.message, '\n') || 'See commit history for full details' }}
+            ```
 
-            Summary:
-            - Built-in shell refresh and setup/settings hardening release line
-            - Built-in upstream UI baseline remains aligned with package.json for this repository state
-            - See CHANGELOG.md for the scoped notes tied to this exact tag
+            ### Release Info
+            - **Date**: ${{ github.event.head_commit.timestamp }}
+            - **Commit**: ${{ github.sha }}
+            - **Type**: ${{ contains(github.ref_name, '-') && 'Prerelease / test validation build' || 'Stable release' }}
 
-            Documentation:
+            ### Documentation
             - README: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md
             - CHANGELOG: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md
-            - Maintenance: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/readme/MAINTENANCE.md
 
-            Note:
-            - Native app release version and built-in upstream UI version are tracked separately in this repository.
+            ### Downloads
+            Release assets for each platform are attached below.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
@@ -308,12 +310,14 @@ jobs:
           echo "=== network_security_config.xml ==="
           cat "$RES_XML/network_security_config.xml"
 
-      - name: Build Android APK
-        run: pnpm tauri android build --apk
+      - name: Build Android APK (split by ABI)
+        run: |
+          # Build separate APKs for each architecture
+          pnpm tauri android build --apk --split-per-abi
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
-      - name: Sign APK
+      - name: Sign APKs (per ABI)
         run: |
           set -euo pipefail
           KS_FILE="src-tauri/open-release.keystore"
@@ -329,36 +333,52 @@ jobs:
           sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
-          UNSIGNED=$(find "$APK_DIR" -name "*.apk" | head -1)
-          echo "Found APK: $UNSIGNED"
+          # Find all APK files (split by ABI)
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release"
+          echo "=== APK files before signing ==="
+          find "$APK_DIR" -name "*.apk" -type f
 
-          # Zipalign
-          "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
-          mv "${UNSIGNED}.aligned" "$UNSIGNED"
+          # Sign each APK
+          for UNSIGNED in $(find "$APK_DIR" -name "*.apk" -type f); do
+            echo "Processing: $UNSIGNED"
 
-          # Sign with apksigner
-          "$BT/apksigner" sign \
-            --ks "$KS_FILE" \
-            --ks-pass pass:"$KEY_PASS" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass pass:"$KEY_PASS" \
-            "$UNSIGNED"
+            # Zipalign
+            "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
+            mv "${UNSIGNED}.aligned" "$UNSIGNED"
 
-          # Verify
-          "$BT/apksigner" verify --verbose "$UNSIGNED"
+            # Sign with apksigner
+            "$BT/apksigner" sign \
+              --ks "$KS_FILE" \
+              --ks-pass pass:"$KEY_PASS" \
+              --ks-key-alias "$KEY_ALIAS" \
+              --key-pass pass:"$KEY_PASS" \
+              "$UNSIGNED"
 
-          # Rename to indicate signed
-          SIGNED="${APK_DIR}/zashboard-universal-release.apk"
-          mv "$UNSIGNED" "$SIGNED"
-          echo "Signed APK: $SIGNED"
+            # Verify
+            "$BT/apksigner" verify --verbose "$UNSIGNED"
 
-      - name: Upload APK
+            # Rename with architecture suffix
+            # Extract ABI from filename (e.g., app-arm64-v8a-release-unsigned.apk -> arm64-v8a)
+            BASENAME=$(basename "$UNSIGNED")
+            if [[ "$BASENAME" =~ app-(.+)-release ]]; then
+              ABI="${BASH_REMATCH[1]}"
+              SIGNED="${APK_DIR}/zashboard-${ABI}-release.apk"
+              mv "$UNSIGNED" "$SIGNED"
+              echo "Signed APK: $SIGNED"
+            else
+              echo "Signed APK: $UNSIGNED"
+            fi
+          done
+
+          echo "=== Signed APK files ==="
+          find "$APK_DIR" -name "*.apk" -type f
+
+      - name: Upload APKs (per ABI)
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           draft: false
           files: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/zashboard-universal-release.apk
+            src-tauri/gen/android/app/build/outputs/apk/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

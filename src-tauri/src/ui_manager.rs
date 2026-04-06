@@ -564,6 +564,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
   var fabOpen=false;
   var autoCloseTimer=null;
   var dragState={isDragging:false,startX:0,startY:0,initialRight:0,initialBottom:0};
+  var fabPosition={right:12,bottom:16};
 
   function goUpstreamSetup(){
     try{
@@ -643,7 +644,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 
   function trySwitchBuiltin(label){
     try{
-      if(label) label.textContent='Switching…';
+      if(label) label.textContent='Switching\u2026';
 
       var postBuiltin=function(){
         return fetch('/__wsf_builtin', { method:'POST', cache:'no-store', keepalive:true }).catch(function(){});
@@ -660,7 +661,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
       }, 2200);
 
       setTimeout(function(){
-        if(label) label.textContent='↩ Built-in UI';
+        if(label) label.textContent='\u21A9 Built-in UI';
       }, 4200);
     }catch(_){}
   }
@@ -673,7 +674,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
     menu.style.opacity=open?'1':'0';
     menu.style.pointerEvents=open?'auto':'none';
     menu.style.transform=open?'translateY(0) scale(1)':'translateY(8px) scale(0.9)';
-    trigger.textContent=open?'✕':'⚙';
+    trigger.textContent=open?'\u2715':'\u2699';
     if(autoCloseTimer) clearTimeout(autoCloseTimer);
     if(open){
       autoCloseTimer=setTimeout(function(){ setFabOpen(false); }, 5000);
@@ -693,18 +694,20 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
       if(!document.getElementById('__wsf_fab')){
         var fab=document.createElement('div');
         fab.id='__wsf_fab';
-        fab.style.cssText='position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 60px);z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:6px;width:auto;height:auto;pointer-events:none;';
+        // Compact container - only wraps the trigger button tightly
+        fab.style.cssText='position:fixed;z-index:2147483647;pointer-events:none;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 16px);';
 
         var menu=document.createElement('div');
         menu.id='__wsf_fab_menu';
-        menu.style.cssText='display:flex;flex-direction:column;gap:5px;align-items:flex-end;opacity:0;pointer-events:none;transform:translateY(8px) scale(0.9);transition:opacity .18s,transform .18s;';
+        menu.style.cssText='position:absolute;bottom:56px;right:0;display:flex;flex-direction:column;gap:8px;align-items:flex-end;opacity:0;pointer-events:none;transform:translateY(8px) scale(0.9);transition:opacity .18s,transform .18s;';
 
+        // Larger menu buttons (48px height, larger font)
         var btnBuiltin=document.createElement('button');
         btnBuiltin.type='button';
         var lblBuiltin=document.createElement('span');
-        lblBuiltin.textContent='↩ Built-in UI';
+        lblBuiltin.textContent='\u21A9 Built-in UI';
         btnBuiltin.appendChild(lblBuiltin);
-        btnBuiltin.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(59,130,246,.88);color:#fff;padding:8px 14px;border-radius:20px;border:0;cursor:pointer;font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;pointer-events:auto;';
+        btnBuiltin.style.cssText='display:flex;align-items:center;gap:6px;background:rgba(59,130,246,.88);color:#fff;padding:12px 16px;border-radius:24px;border:0;cursor:pointer;font-size:14px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;height:48px;pointer-events:auto;';
         btnBuiltin.onmouseenter=function(){btnBuiltin.style.background='rgba(59,130,246,1)';resetAutoClose();};
         btnBuiltin.onmouseleave=function(){btnBuiltin.style.background='rgba(59,130,246,.88)';};
         btnBuiltin.onclick=function(ev){
@@ -715,8 +718,8 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 
         var btnSetup=document.createElement('button');
         btnSetup.type='button';
-        btnSetup.textContent='⚙ Setup';
-        btnSetup.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.78);color:#1f2937;padding:8px 14px;border-radius:20px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;pointer-events:auto;';
+        btnSetup.textContent='\u2699 Setup';
+        btnSetup.style.cssText='display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.78);color:#1f2937;padding:12px 16px;border-radius:24px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:14px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;height:48px;pointer-events:auto;';
         btnSetup.onmouseenter=function(){btnSetup.style.background='rgba(255,255,255,.95)';resetAutoClose();};
         btnSetup.onmouseleave=function(){btnSetup.style.background='rgba(255,255,255,.78)';};
         btnSetup.onclick=function(ev){
@@ -729,56 +732,58 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         menu.appendChild(btnBuiltin);
         menu.appendChild(btnSetup);
 
+        // Larger trigger button (48px), more transparent
         var trigger=document.createElement('button');
         trigger.id='__wsf_fab_trigger';
         trigger.type='button';
-        trigger.textContent='⚙';
-        trigger.style.cssText='width:42px;height:42px;border-radius:50%;border:0;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;background:rgba(107,114,128,.65);color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .15s,transform .15s;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;';
-        trigger.onmouseenter=function(){trigger.style.background='rgba(107,114,128,.85)';};
-        trigger.onmouseleave=function(){trigger.style.background='rgba(107,114,128,.65)';};
+        trigger.textContent='\u2699';
+        trigger.style.cssText='width:48px;height:48px;border-radius:50%;border:0;cursor:pointer;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;background:rgba(107,114,128,.35);color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .15s,transform .15s;pointer-events:auto;';
+        trigger.onmouseenter=function(){trigger.style.background='rgba(107,114,128,.55)';};
+        trigger.onmouseleave=function(){trigger.style.background='rgba(107,114,128,.35)';};
         trigger.onclick=function(ev){
           try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
+          if(dragState.isDragging) return false;
           setFabOpen(!fabOpen);
           return false;
         };
 
-        function startDrag(ev){
-          if(fabOpen) return; // Don't drag when menu is open
-          dragState.isDragging=true;
-          dragState.startX=ev.clientX||ev.touches[0].clientX;
-          dragState.startY=ev.clientY||ev.touches[0].clientY;
-          var rect=fab.getBoundingClientRect();
-          dragState.initialRight=parseFloat(fab.style.right)||12;
-          dragState.initialBottom=parseFloat(fab.style.bottom)||16;
-          trigger.style.cursor='grabbing';
-        }
-        function moveDrag(ev){
-          if(!dragState.isDragging) return;
-          var clientX=ev.clientX||ev.touches[0].clientX;
-          var clientY=ev.clientY||ev.touches[0].clientY;
-          var dx=clientX-dragState.startX;
-          var dy=clientY-dragState.startY;
-          var newRight=dragState.initialRight-dx;
-          var newBottom=dragState.initialBottom-dy;
-          var vw=window.innerWidth;
-          var vh=window.innerHeight;
-          newRight=Math.max(12,Math.min(vw-48,newRight));
-          newBottom=Math.max(12,Math.min(vh-48,newBottom));
-          fab.style.right=newRight+'px';
-          fab.style.bottom=newBottom+'px';
-        }
-        function endDrag(){
-          if(dragState.isDragging){
+        // Initialize drag functionality
+        (function initDrag(){
+          function onPointerDown(e){
+            if(fabOpen) return;
             dragState.isDragging=false;
-            trigger.style.cursor='pointer';
+            dragState.startX=e.clientX||e.touches[0].clientX;
+            dragState.startY=e.clientY||e.touches[0].clientY;
+            var rect=fab.getBoundingClientRect();
+            dragState.initialRight=window.innerWidth-rect.right;
+            dragState.initialBottom=window.innerHeight-rect.bottom;
+            trigger.style.cursor='grabbing';
           }
-        }
-        trigger.addEventListener('mousedown',startDrag);
-        trigger.addEventListener('touchstart',startDrag,{passive:true});
-        document.addEventListener('mousemove',moveDrag);
-        document.addEventListener('touchmove',moveDrag,{passive:true});
-        document.addEventListener('mouseup',endDrag);
-        document.addEventListener('touchend',endDrag);
+          function onPointerMove(e){
+            if(!dragState.startX) return;
+            var cx=e.clientX||e.touches[0].clientX;
+            var cy=e.clientY||e.touches[0].clientY;
+            var dx=cx-dragState.startX;
+            var dy=cy-dragState.startY;
+            if(Math.abs(dx)>3||Math.abs(dy)>3) dragState.isDragging=true;
+            if(dragState.isDragging){
+              fab.style.right=(dragState.initialRight-dx)+'px';
+              fab.style.bottom=(dragState.initialBottom-dy)+'px';
+            }
+          }
+          function onPointerUp(){
+            dragState.startX=0;
+            dragState.startY=0;
+            trigger.style.cursor='pointer';
+            setTimeout(function(){dragState.isDragging=false;},50);
+          }
+          trigger.addEventListener('mousedown',onPointerDown);
+          trigger.addEventListener('touchstart',onPointerDown,{passive:true});
+          document.addEventListener('mousemove',onPointerMove);
+          document.addEventListener('touchmove',onPointerMove,{passive:true});
+          document.addEventListener('mouseup',onPointerUp);
+          document.addEventListener('touchend',onPointerUp);
+        })();
 
         fab.appendChild(menu);
         fab.appendChild(trigger);
@@ -817,52 +822,88 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 
   // Read insets from server-injected global var, or use sensible defaults
   var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, right:0, bottom:34, left:0};
+  if(!insets.top && !insets.bottom) return;
 
-  // Force safe area on body and common containers - targeted approach
+  // Force safe area padding on html and body using !important
+  // This is the most reliable method that works regardless of CSS framework
   function applySafeArea(){
+    var html = document.documentElement;
     var body = document.body;
+    
+    // Set CSS variables for any code that reads them
+    html.style.setProperty('--safe-area-inset-top', insets.top + 'px', 'important');
+    html.style.setProperty('--safe-area-inset-bottom', insets.bottom + 'px', 'important');
+    html.style.setProperty('--safe-area-inset-left', insets.left + 'px', 'important');
+    html.style.setProperty('--safe-area-inset-right', insets.right + 'px', 'important');
+    
+    // Also use wsf-prefixed versions
+    html.style.setProperty('--wsf-sai-top', insets.top + 'px', 'important');
+    html.style.setProperty('--wsf-sai-bottom', insets.bottom + 'px', 'important');
+    html.style.setProperty('--wsf-sai-left', insets.left + 'px', 'important');
+    html.style.setProperty('--wsf-sai-right', insets.right + 'px', 'important');
+    
+    // Force padding on body AND html to ensure top safe area works
     if(body){
-      // Force body padding-top to avoid status bar
-      body.style.setProperty('padding-top', insets.top + 'px', 'important');
-      body.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
+      var computed = getComputedStyle(body);
+      var existingTop = parseFloat(computed.paddingTop) || 0;
+      var existingBottom = parseFloat(computed.paddingBottom) || 0;
+      
+      // Always ensure minimum top safe area padding
+      if(existingTop < insets.top){
+        body.style.setProperty('padding-top', insets.top + 'px', 'important');
+      }
+      if(existingBottom < insets.bottom){
+        body.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
+      }
+      
+      // Also set margin as a fallback (some frameworks use margin instead of padding)
+      var marginTop = parseFloat(getComputedStyle(body).marginTop) || 0;
+      if(marginTop < insets.top){
+        body.style.setProperty('margin-top', insets.top + 'px', 'important');
+      }
     }
     
-    // Target common container selectors used by zashboard
+    // Force html padding too (some SPAs set html height:100% and body scrolls)
+    html.style.setProperty('padding-top', insets.top + 'px', 'important');
+    
+    // Target common fixed header containers that might overlap with safe area
+    var fixedHeaders = document.querySelectorAll('[class*="header"], [class*="Header"], [class*="app-bar"], [class*="AppBar"], [class*="navbar"], [class*="Navbar"]');
+    fixedHeaders.forEach(function(header){
+      var cs = getComputedStyle(header);
+      if(cs.position === 'fixed' || cs.position === 'sticky'){
+        var currentTop = parseFloat(cs.top) || 0;
+        if(currentTop < insets.top){
+          header.style.setProperty('top', insets.top + 'px', 'important');
+        }
+      }
+    });
+    
+    // Also try common container selectors
     var selectors = ['#app', '#root', 'main', '.app', '.main', '[class*="app"]', '[class*="App"]'];
     selectors.forEach(function(sel){
       var el = document.querySelector(sel);
       if(el && el !== body){
-        el.style.setProperty('padding-top', insets.top + 'px', 'important');
-        el.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
+        var cs = getComputedStyle(el);
+        var pt = parseFloat(cs.paddingTop) || 0;
+        var pb = parseFloat(cs.paddingBottom) || 0;
+        if(pt < insets.top) el.style.setProperty('padding-top', insets.top + 'px', 'important');
+        if(pb < insets.bottom) el.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
       }
-    });
-    
-    // Patch any inline env() styles
-    document.querySelectorAll('[style*="safe-area"]').forEach(function(el){
-      var s = el.getAttribute('style') || '';
-      if(s.indexOf('env(') === -1) return;
-      s = s.replace(/env\(\s*safe-area-inset-top\s*(,[^)]+)?\)/gi, insets.top + 'px');
-      s = s.replace(/env\(\s*safe-area-inset-bottom\s*(,[^)]+)?\)/gi, insets.bottom + 'px');
-      s = s.replace(/env\(\s*safe-area-inset-left\s*(,[^)]+)?\)/gi, insets.left + 'px');
-      s = s.replace(/env\(\s*safe-area-inset-right\s*(,[^)]+)?\)/gi, insets.right + 'px');
-      el.setAttribute('style', s);
     });
   }
 
-  // Apply immediately and on DOM changes
+  // Apply immediately and repeatedly
   applySafeArea();
-  setTimeout(applySafeArea, 100);
+  setTimeout(applySafeArea, 50);
+  setTimeout(applySafeArea, 200);
   setTimeout(applySafeArea, 500);
+  setTimeout(applySafeArea, 1000);
+  setTimeout(applySafeArea, 2000);
   
+  // Re-apply when DOM changes
   if(window.MutationObserver){
-    new MutationObserver(function(mutations){
-      var shouldPatch = false;
-      mutations.forEach(function(mutation){
-        if(mutation.type === 'childList' && mutation.addedNodes.length > 0){
-          shouldPatch = true;
-        }
-      });
-      if(shouldPatch) applySafeArea();
+    new MutationObserver(function(){
+      applySafeArea();
     }).observe(document.documentElement, {childList:true, subtree:true});
   }
 })();
@@ -1441,19 +1482,6 @@ fn patch_css_env(css: &str, top: u32, bottom: u32) -> String {
     result = result.replace("env(safe-area-inset-right)", "0px");
     result = result.replace("env(safe-area-inset-right, 0px)", "0px");
     result
-}
-
-use crate::safe_area;
-
-#[tauri::command]
-pub fn get_safe_area_insets() -> String {
-    let insets = safe_area::get_safe_area_insets();
-    format!("{},{},{},{}", 
-        insets.top as u32, 
-        insets.right as u32, 
-        insets.bottom as u32, 
-        insets.left as u32
-    )
 }
 
 fn send_http_response(
