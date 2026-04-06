@@ -185,25 +185,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        abi: [arm64-v8a, armeabi-v7a]
         include:
-          # Only build most common architectures (speeds up CI)
           - abi: arm64-v8a
             rust-target: aarch64-linux-android
-            tauri-target: aarch64
             sidecar-suffix: linux-arm64
           - abi: armeabi-v7a
             rust-target: armv7-linux-androideabi
-            tauri-target: armv7
             sidecar-suffix: linux-armv7
-          # x86 and x86_64 are rare on Android, skip for faster builds
-          # - abi: x86_64
-          #   rust-target: x86_64-linux-android
-          #   tauri-target: x86_64
-          #   sidecar-suffix: linux-amd64
-          # - abi: x86
-          #   rust-target: i686-linux-android
-          #   tauri-target: i686
-          #   sidecar-suffix: linux-386
     steps:
       - uses: actions/checkout@v4
 
@@ -238,41 +227,30 @@ jobs:
       - name: Initialize Android project
         run: pnpm tauri android init
 
-      - name: Download sidecar binaries into jniLibs
+      - name: Download sidecar binary
         run: |
           JNILIBS="src-tauri/gen/android/app/src/main/jniLibs"
-          ABI="${{ matrix.abi }}"
-          SUFFIX="${{ matrix.sidecar-suffix }}"
-
-          mkdir -p "$JNILIBS/$ABI"
+          mkdir -p "$JNILIBS/${{ matrix.abi }}"
 
           # gust
           gh release download "$GUST_TAG" --repo lovitus/gust \
-            -p "gost-${SUFFIX}-${GUST_VERSION}.gz" -D /tmp
-          gunzip -f "/tmp/gost-${SUFFIX}-${GUST_VERSION}.gz"
-          mv "/tmp/gost-${SUFFIX}-${GUST_VERSION}" "$JNILIBS/$ABI/libgust.so"
-          chmod +x "$JNILIBS/$ABI/libgust.so"
+            -p "gost-${{ matrix.sidecar-suffix }}-${GUST_VERSION}.gz" -D /tmp
+          gunzip -f "/tmp/gost-${{ matrix.sidecar-suffix }}-${GUST_VERSION}.gz"
+          mv "/tmp/gost-${{ matrix.sidecar-suffix }}-${GUST_VERSION}" "$JNILIBS/${{ matrix.abi }}/libgust.so"
 
           # slider
           gh release download "$SLIDER_TAG" --repo lovitus/slider \
-            -p "slider-${SUFFIX}-${SLIDER_VERSION}.gz" -D /tmp
-          gunzip -f "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}.gz"
-          mv "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}" "$JNILIBS/$ABI/libslider.so"
-          chmod +x "$JNILIBS/$ABI/libslider.so"
-
-          echo "=== jniLibs for $ABI ==="
-          find "$JNILIBS/$ABI" -type f -exec ls -lh {} \;
+            -p "slider-${{ matrix.sidecar-suffix }}-${SLIDER_VERSION}.gz" -D /tmp
+          gunzip -f "/tmp/slider-${{ matrix.sidecar-suffix }}-${SLIDER_VERSION}.gz"
+          mv "/tmp/slider-${{ matrix.sidecar-suffix }}-${SLIDER_VERSION}" "$JNILIBS/${{ matrix.abi }}/libslider.so"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure Android manifest (network, sidecar, keyboard)
+      - name: Configure Android manifest
         run: |
-          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
           RES_XML="src-tauri/gen/android/app/src/main/res/xml"
-
-          # Create network security config allowing cleartext for localhost and LAN
           mkdir -p "$RES_XML"
-          cat > "$RES_XML/network_security_config.xml" << 'NSEOF'
+          cat > "$RES_XML/network_security_config.xml" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <network-security-config>
             <base-config cleartextTrafficPermitted="true">
@@ -281,119 +259,72 @@ jobs:
               </trust-anchors>
             </base-config>
           </network-security-config>
-          NSEOF
+          EOF
 
-          # Use Python for robust XML manipulation
-          python3 << 'PYEOF'
-          import re
-
+          python3 << 'EOF'
           manifest_path = "src-tauri/gen/android/app/src/main/AndroidManifest.xml"
           with open(manifest_path, "r") as f:
               content = f.read()
 
-          # Add ACCESS_NETWORK_STATE permission if missing
           if "ACCESS_NETWORK_STATE" not in content:
-              content = content.replace(
-                  "</manifest>",
-                  '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n</manifest>'
-              )
+              content = content.replace("</manifest>", '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n</manifest>')
 
-          # Add attributes to <application> tag (idempotent)
-          app_attrs = {
-              "android:extractNativeLibs": '"true"',
-              "android:usesCleartextTraffic": '"true"',
-              "android:networkSecurityConfig": '"@xml/network_security_config"',
-          }
-          for attr, val in app_attrs.items():
-              if attr not in content:
-                  content = content.replace("<application", f"<application {attr}={val}", 1)
-
-          # Add windowSoftInputMode to first <activity> (idempotent)
+          if "android:extractNativeLibs" not in content:
+              content = content.replace("<application", '<application android:extractNativeLibs="true"', 1)
+          if "android:usesCleartextTraffic" not in content:
+              content = content.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+          if "android:networkSecurityConfig" not in content:
+              content = content.replace("<application", '<application android:networkSecurityConfig="@xml/network_security_config"', 1)
           if "windowSoftInputMode" not in content:
               content = content.replace("<activity", '<activity android:windowSoftInputMode="adjustResize"', 1)
 
           with open(manifest_path, "w") as f:
               f.write(content)
+          EOF
 
-          print("AndroidManifest.xml patched successfully")
-          PYEOF
-
-          echo "=== AndroidManifest.xml ==="
-          cat "$MANIFEST"
-
-      - name: Build Android APK (${{ matrix.abi }})
-        run: |
-          # Build single ABI APK - use Tauri target format
-          pnpm tauri android build --apk --target ${{ matrix.tauri-target }}
+      - name: Build Android APK
+        run: pnpm tauri android build --apk
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
-      - name: Sign APK (${{ matrix.abi }})
+      - name: Sign APK
         run: |
-          set -euo pipefail
-          KS_FILE="src-tauri/open-release.keystore"
-          KEY_ALIAS="zashboard"
-          KEY_PASS="zashboard-open-2026"
-          ABI="${{ matrix.abi }}"
-
-          if [ ! -f "$KS_FILE" ]; then
-            echo "ERROR: missing keystore file: $KS_FILE"
-            exit 2
-          fi
-
-          # Install build-tools for apksigner & zipalign
           sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          # Find APK for this ABI
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${ABI}/release"
-          echo "=== APK files for $ABI ==="
-          find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || echo "No APKs found in $APK_DIR"
-
-          # Also check universal path as fallback
-          if [ ! -d "$APK_DIR" ] || [ -z "$(find "$APK_DIR" -name '*.apk' 2>/dev/null)" ]; then
-            APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release/${ABI}"
-            echo "=== Checking fallback path: $APK_DIR ==="
-            find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || true
-          fi
-
-          UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
-          if [ -z "$UNSIGNED" ]; then
-            echo "ERROR: No APK found for ABI: $ABI"
+          # Find the APK for this specific ABI
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*${{ matrix.abi }}*" -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "APK not found for ${{ matrix.abi }}"
+            find src-tauri/gen/android/app/build/outputs/apk -name "*.apk"
             exit 1
           fi
 
-          echo "Found APK: $UNSIGNED"
+          echo "Found APK: $APK"
 
-          # Zipalign
-          "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
-          mv "${UNSIGNED}.aligned" "$UNSIGNED"
+          # Zipalign and sign
+          "$BT/zipalign" -f 4 "$APK" "${APK}.aligned"
+          mv "${APK}.aligned" "$APK"
 
-          # Sign with apksigner
           "$BT/apksigner" sign \
-            --ks "$KS_FILE" \
-            --ks-pass pass:"$KEY_PASS" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass pass:"$KEY_PASS" \
-            "$UNSIGNED"
+            --ks "src-tauri/open-release.keystore" \
+            --ks-pass pass:"zashboard-open-2026" \
+            --ks-key-alias "zashboard" \
+            --key-pass pass:"zashboard-open-2026" \
+            "$APK"
 
-          # Verify
-          "$BT/apksigner" verify --verbose "$UNSIGNED"
+          "$BT/apksigner" verify --verbose "$APK"
 
-          # Rename to final name
-          SIGNED="${APK_DIR}/zashboard-${ABI}-release.apk"
-          mv "$UNSIGNED" "$SIGNED"
-          echo "Signed APK: $SIGNED"
+          # Rename
+          DIR=$(dirname "$APK")
+          mv "$APK" "${DIR}/zashboard-${{ matrix.abi }}-release.apk"
+          echo "Signed: ${DIR}/zashboard-${{ matrix.abi }}-release.apk"
 
-          # List directory
-          ls -la "$APK_DIR"
-
-      - name: Upload APK (${{ matrix.abi }})
+      - name: Upload APK
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           draft: false
-          files: |
-            src-tauri/gen/android/app/build/outputs/apk/${{ matrix.abi }}/release/*.apk
+          files: src-tauri/gen/android/app/build/outputs/apk/**/zashboard-${{ matrix.abi }}-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
