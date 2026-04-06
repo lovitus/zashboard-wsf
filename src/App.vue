@@ -24,6 +24,35 @@ const toast = ref<HTMLElement>()
 
 initNotification(toast as Ref<HTMLElement>)
 
+// Detect Android system WebView and apply safe area classes
+const detectAndApplySafeArea = () => {
+  const userAgent = navigator.userAgent.toLowerCase()
+  const isAndroid = userAgent.includes('android')
+  const isWebView = userAgent.includes('wv') || userAgent.includes('version')
+  
+  if (isAndroid && isWebView) {
+    // Check if we're in a system WebView (not Tauri)
+    const isInTauri = typeof window !== 'undefined' && '__TAURI__' in window
+    
+    if (!isInTauri) {
+      // System WebView detected, apply safe area classes
+      const screenHeight = window.screen.height
+      const windowHeight = window.innerHeight
+      const safeAreaHeight = screenHeight - windowHeight
+      
+      if (safeAreaHeight > 100) {
+        // Large safe area detected (likely with notch)
+        document.body.classList.add('safe-area-detected')
+      } else if (safeAreaHeight > 50) {
+        // Small safe area detected
+        document.body.classList.add('safe-area-small')
+      }
+      
+      console.log('System WebView detected, safe area height:', safeAreaHeight)
+    }
+  }
+}
+
 // 字体类名映射表
 const FONT_CLASS_MAP = {
   [EMOJIS.TWEMOJI]: {
@@ -104,6 +133,10 @@ onMounted(() => {
   if (autoImportSettings.value) {
     importSettingsFromUrl()
   }
+  
+  // Detect Android system WebView and apply safe area classes
+  detectAndApplySafeArea()
+  
   watch(
     theme,
     () => {
