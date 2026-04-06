@@ -771,88 +771,75 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 (function(){
   // Only run on upstream UI (localhost/127.0.0.1), NOT on built-in UI
-  var isUpstreamUI = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
-  if (!isUpstreamUI) return;
+  if (!(location.hostname === '127.0.0.1' || location.hostname === 'localhost')) return;
   
   if(window.__WSF_SAFE_AREA_PATCHED__) return;
   window.__WSF_SAFE_AREA_PATCHED__=true;
 
-  // Read insets from server-injected global var, or use defaults
+  // Read insets from server-injected global var, or use sensible defaults
   var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, right:0, bottom:34, left:0};
   if(!insets.top && !insets.bottom) return;
 
-  // Inject CSS variables dynamically
-  var style = document.createElement('style');
-  style.id = '__wsf_sai_vars';
-  style.textContent = ':root{--wsf-sai-top:'+insets.top+'px;--wsf-sai-right:'+insets.right+'px;--wsf-sai-bottom:'+insets.bottom+'px;--wsf-sai-left:'+insets.left+'px;}';
-  document.head.appendChild(style);
-
-  var envRe=/env\(\s*safe-area-inset-(top|right|bottom|left)\s*(,[^)]+)?\)/gi;
-
-  function patchCSS(text){
-    return text.replace(envRe,function(m,d){return insets[d]+'px';});
-  }
-
-  // Patch all stylesheets
-  function patchSheets(){
-    try{
-      for(var i=0;i<document.styleSheets.length;i++){
-        var sheet=document.styleSheets[i];
-        try{
-          var rules=sheet.cssRules||sheet.rules;
-          if(!rules)continue;
-          for(var j=rules.length-1;j>=0;j--){
-            var rule=rules[j];
-            if(rule.cssText&&envRe.test(rule.cssText)){
-              var newText=patchCSS(rule.cssText);
-              if(newText!==rule.cssText){
-                sheet.deleteRule(j);
-                sheet.insertRule(newText,j);
-              }
-            }
-          }
-        }catch(e){}
+  // Force safe area padding on html and body using !important
+  // This is the most reliable method that works regardless of CSS framework
+  function applySafeArea(){
+    var html = document.documentElement;
+    var body = document.body;
+    
+    // Set CSS variables for any code that reads them
+    html.style.setProperty('--safe-area-inset-top', insets.top + 'px', 'important');
+    html.style.setProperty('--safe-area-inset-bottom', insets.bottom + 'px', 'important');
+    html.style.setProperty('--safe-area-inset-left', insets.left + 'px', 'important');
+    html.style.setProperty('--safe-area-inset-right', insets.right + 'px', 'important');
+    
+    // Also use wsf-prefixed versions
+    html.style.setProperty('--wsf-sai-top', insets.top + 'px', 'important');
+    html.style.setProperty('--wsf-sai-bottom', insets.bottom + 'px', 'important');
+    html.style.setProperty('--wsf-sai-left', insets.left + 'px', 'important');
+    html.style.setProperty('--wsf-sai-right', insets.right + 'px', 'important');
+    
+    // Force padding on body if it has none, or add to existing padding
+    if(body){
+      var computed = getComputedStyle(body);
+      var existingTop = parseFloat(computed.paddingTop) || 0;
+      var existingBottom = parseFloat(computed.paddingBottom) || 0;
+      
+      // Only add if not already accounted for (avoid double padding)
+      if(existingTop < insets.top){
+        body.style.setProperty('padding-top', insets.top + 'px', 'important');
       }
-    }catch(_){}
+      if(existingBottom < insets.bottom){
+        body.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
+      }
+    }
+    
+    // Also try common container selectors
+    var selectors = ['#app', '#root', 'main', '.app', '.main', '[class*="app"]', '[class*="App"]'];
+    selectors.forEach(function(sel){
+      var el = document.querySelector(sel);
+      if(el && el !== body){
+        var cs = getComputedStyle(el);
+        var pt = parseFloat(cs.paddingTop) || 0;
+        var pb = parseFloat(cs.paddingBottom) || 0;
+        if(pt < insets.top) el.style.setProperty('padding-top', insets.top + 'px', 'important');
+        if(pb < insets.bottom) el.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
+      }
+    });
   }
 
-  // Patch inline styles
-  function patchInline(el){
-    try{
-      var s=el.getAttribute('style');
-      if(!s||!envRe.test(s))return;
-      el.setAttribute('style',patchCSS(s));
-    }catch(_){}
-  }
-
-  function run(){
-    patchSheets();
-    document.querySelectorAll('[style*="safe-area"]').forEach(patchInline);
-  }
-
-  // Run immediately and after delays
-  run();
-  setTimeout(run,100);
-  setTimeout(run,500);
-  setTimeout(run,1500);
-
-  // Watch for new stylesheets
+  // Apply immediately and repeatedly
+  applySafeArea();
+  setTimeout(applySafeArea, 50);
+  setTimeout(applySafeArea, 200);
+  setTimeout(applySafeArea, 500);
+  setTimeout(applySafeArea, 1000);
+  setTimeout(applySafeArea, 2000);
+  
+  // Re-apply when DOM changes
   if(window.MutationObserver){
-    new MutationObserver(function(ms){
-      var needsPatch=false;
-      ms.forEach(function(m){
-        if(m.type==='childList'){
-          m.addedNodes.forEach(function(n){
-            if(n.nodeType===1){
-              if(n.tagName==='STYLE'||n.tagName==='LINK')needsPatch=true;
-              patchInline(n);
-              if(n.querySelectorAll)n.querySelectorAll('[style*="safe-area"]').forEach(patchInline);
-            }
-          });
-        }
-      });
-      if(needsPatch)setTimeout(run,50);
-    }).observe(document.documentElement,{childList:true,subtree:true});
+    new MutationObserver(function(){
+      applySafeArea();
+    }).observe(document.documentElement, {childList:true, subtree:true});
   }
 })();
 </script>"#;
