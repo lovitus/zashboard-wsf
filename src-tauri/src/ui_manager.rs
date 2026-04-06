@@ -39,6 +39,7 @@ pub struct UiManagerState {
     pub server_port: Option<u16>,
     pub server_shutdown: Option<Arc<AtomicBool>>,
     pub storage_data: Option<String>,
+    pub safe_area_insets: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,6 +61,7 @@ const ACTIVE_VERSION_FILE: &str = "ui_active_version.txt";
 const CUSTOM_RELEASES_URL_FILE: &str = "ui_custom_releases_url.txt";
 const CUSTOM_DOWNLOAD_BASE_FILE: &str = "ui_custom_download_base.txt";
 const STORAGE_DATA_FILE: &str = "ui_storage_data.txt";
+const SAFE_AREA_INSETS_FILE: &str = "ui_safe_area_insets.txt";
 const DEFAULT_RELEASES_URL: &str = "https://api.github.com/repos/Zephyruso/zashboard/releases";
 const DEFAULT_DOWNLOAD_BASE: &str = "https://github.com/Zephyruso/zashboard/releases/download";
 const HTTP_TIMEOUT_SECS: u64 = 30;
@@ -114,6 +116,18 @@ fn write_storage_data(base_dir: &PathBuf, data: Option<&str>) {
     }
 }
 
+fn read_safe_area_insets(base_dir: &PathBuf) -> Option<String> {
+    read_trimmed_file(&base_dir.join(SAFE_AREA_INSETS_FILE))
+}
+
+fn write_safe_area_insets(base_dir: &PathBuf, data: Option<&str>) {
+    let path = base_dir.join(SAFE_AREA_INSETS_FILE);
+    match data {
+        Some(d) if !d.is_empty() => { let _ = std::fs::write(&path, d); }
+        _ => { let _ = std::fs::remove_file(&path); }
+    }
+}
+
 fn dir_size(path: &PathBuf) -> u64 {
     let mut total = 0u64;
     if let Ok(entries) = std::fs::read_dir(path) {
@@ -147,12 +161,13 @@ fn build_state(base_dir: PathBuf) -> UiManagerState {
     let custom_releases_url = read_custom_url(&base_dir, CUSTOM_RELEASES_URL_FILE);
     let custom_download_base = read_custom_url(&base_dir, CUSTOM_DOWNLOAD_BASE_FILE);
     let storage_data = read_storage_data(&base_dir);
+    let safe_area_insets = read_safe_area_insets(&base_dir);
 
     // If a version was previously active, start the file server
     let (server_port, server_shutdown) = if let Some(ref ver) = active_version {
         let version_dir = base_dir.join(ver);
         if version_dir.join("index.html").exists() {
-            match start_file_server(version_dir, storage_data.clone(), base_dir.clone()) {
+            match start_file_server(version_dir, storage_data.clone(), safe_area_insets.clone(), base_dir.clone()) {
                 Ok((port, shutdown)) => {
                     eprintln!("Resumed file server for {} on port {}", ver, port);
                     (Some(port), Some(shutdown))
@@ -185,6 +200,7 @@ fn build_state(base_dir: PathBuf) -> UiManagerState {
         server_port,
         server_shutdown,
         storage_data,
+        safe_area_insets,
     }
 }
 
@@ -381,6 +397,7 @@ pub async fn ui_activate_version(
     state: State<'_, Mutex<UiManagerState>>,
     tag: String,
     storage_data: Option<String>,
+    safe_area_insets: Option<String>,
 ) -> Result<String, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
     let version_dir = s.base_dir.join(&tag);
@@ -394,17 +411,19 @@ pub async fn ui_activate_version(
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    // Persist storage data for restart recovery
+    // Persist storage data and safe area insets for restart recovery
     write_storage_data(&s.base_dir, storage_data.as_deref());
+    write_safe_area_insets(&s.base_dir, safe_area_insets.as_deref());
 
     // Start new file server for this version with storage data
     let (port, shutdown) =
-        start_file_server(version_dir, storage_data.clone(), s.base_dir.clone())?;
+        start_file_server(version_dir, storage_data.clone(), safe_area_insets.clone(), s.base_dir.clone())?;
 
     s.active_version = Some(tag.clone());
     s.server_port = Some(port);
     s.server_shutdown = Some(shutdown);
     s.storage_data = storage_data;
+    s.safe_area_insets = safe_area_insets;
     write_active_version(&s.base_dir, Some(&tag));
 
     let url = format!("http://127.0.0.1:{}", port);
@@ -427,8 +446,10 @@ pub async fn ui_deactivate(
     s.server_port = None;
     s.server_shutdown = None;
     s.storage_data = None;
+    s.safe_area_insets = None;
     write_active_version(&s.base_dir, None);
     write_storage_data(&s.base_dir, None);
+    write_safe_area_insets(&s.base_dir, None);
 
     eprintln!("Deactivated upstream UI, switched to built-in");
     Ok("Switched to built-in UI".to_string())
@@ -752,52 +773,70 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   if(window.__WSF_SAFE_AREA_PATCHED__) return;
   window.__WSF_SAFE_AREA_PATCHED__=true;
 
-  function ensureViewportFitCover(){
+  var map={
+    'env(safe-area-inset-top)':'var(--wsf-sai-top)',
+    'env(safe-area-inset-right)':'var(--wsf-sai-right)',
+    'env(safe-area-inset-bottom)':'var(--wsf-sai-bottom)',
+    'env(safe-area-inset-left)':'var(--wsf-sai-left)',
+    'env(safe-area-inset-top, 0px)':'var(--wsf-sai-top)',
+    'env(safe-area-inset-right, 0px)':'var(--wsf-sai-right)',
+    'env(safe-area-inset-bottom, 0px)':'var(--wsf-sai-bottom)',
+    'env(safe-area-inset-left, 0px)':'var(--wsf-sai-left)'
+  };
+
+  function patchStyle(el){
     try{
-      var meta=document.querySelector('meta[name="viewport"]');
-      if(meta){
-        var c=meta.getAttribute('content')||'';
-        if(c.indexOf('viewport-fit')===-1){
-          meta.setAttribute('content',c+',viewport-fit=cover');
+      var s=el.getAttribute('style');
+      if(!s||s.indexOf('safe-area-inset')===-1) return;
+      var patched=s;
+      for(var k in map){
+        if(map.hasOwnProperty(k)) patched=patched.split(k).join(map[k]);
+      }
+      if(patched!==s) el.setAttribute('style',patched);
+    }catch(_){}
+  }
+
+  function patchAll(){
+    try{
+      var els=document.querySelectorAll('[style*="safe-area-inset"]');
+      for(var i=0;i<els.length;i++) patchStyle(els[i]);
+    }catch(_){}
+  }
+
+  function observe(){
+    try{
+      if(!window.MutationObserver) return;
+      new MutationObserver(function(mutations){
+        for(var i=0;i<mutations.length;i++){
+          var m=mutations[i];
+          if(m.type==='attributes'&&m.attributeName==='style'){
+            patchStyle(m.target);
+          }
+          if(m.type==='childList'){
+            for(var j=0;j<m.addedNodes.length;j++){
+              var n=m.addedNodes[j];
+              if(n.nodeType===1){
+                patchStyle(n);
+                if(n.querySelectorAll){
+                  var sub=n.querySelectorAll('[style*="safe-area-inset"]');
+                  for(var k=0;k<sub.length;k++) patchStyle(sub[k]);
+                }
+              }
+            }
+          }
         }
-      }else{
-        meta=document.createElement('meta');
-        meta.name='viewport';
-        meta.content='width=device-width,initial-scale=1,viewport-fit=cover';
-        (document.head||document.documentElement).appendChild(meta);
-      }
+      }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
     }catch(_){}
   }
 
-  function injectSafeAreaStyle(){
-    try{
-      var style=document.getElementById('__wsf_safe_area_style');
-      if(!style){
-        style=document.createElement('style');
-        style.id='__wsf_safe_area_style';
-        (document.head||document.documentElement).appendChild(style);
-      }
-      style.textContent=
-        'html{'+
-          'padding-top:env(safe-area-inset-top)!important;'+
-          'padding-bottom:env(safe-area-inset-bottom)!important;'+
-          'padding-left:env(safe-area-inset-left)!important;'+
-          'padding-right:env(safe-area-inset-right)!important;'+
-          'min-height:100vh;min-height:100dvh;'+
-          'box-sizing:border-box;'+
-        '}';
-    }catch(_){}
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',function(){patchAll();observe();},{once:true});
+  }else{
+    patchAll();observe();
   }
-
-  function patch(){
-    ensureViewportFitCover();
-    injectSafeAreaStyle();
-  }
-
-  patch();
-  window.addEventListener('load', patch);
-  setTimeout(patch, 300);
-  setTimeout(patch, 1200);
+  setTimeout(patchAll,100);
+  setTimeout(patchAll,500);
+  setTimeout(patchAll,1500);
 })();
 </script>"#;
 
@@ -940,6 +979,7 @@ fn request_app_restart() {
 fn start_file_server(
     root_dir: PathBuf,
     storage_data: Option<String>,
+    safe_area_insets: Option<String>,
     base_dir: PathBuf,
 ) -> Result<(u16, Arc<AtomicBool>), String> {
     let listener = std::net::TcpListener::bind("127.0.0.1:0")
@@ -966,11 +1006,12 @@ fn start_file_server(
                 Ok((stream, _)) => {
                     let root = root_dir.clone();
                     let sd = storage_data.clone();
+                    let sai = safe_area_insets.clone();
                     let base = base_dir.clone();
                     let req_shutdown = shutdown_flag.clone();
                     std::thread::spawn(move || {
                         if let Err(e) =
-                            handle_http_request(stream, &root, sd.as_deref(), &base, &req_shutdown)
+                            handle_http_request(stream, &root, sd.as_deref(), sai.as_deref(), &base, &req_shutdown)
                         {
                             eprintln!("HTTP handler error: {}", e);
                         }
@@ -997,6 +1038,7 @@ fn handle_http_request(
     mut stream: std::net::TcpStream,
     root: &std::path::Path,
     storage_data: Option<&str>,
+    safe_area_insets: Option<&str>,
     base_dir: &PathBuf,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -1082,7 +1124,7 @@ fn handle_http_request(
             std::fs::read(&file_path).map_err(|e| format!("File read error: {}", e))?;
         let mime = mime_type(&clean_path);
         if mime.starts_with("text/html") {
-            (inject_scripts(&content, storage_data), mime)
+            (inject_scripts(&content, storage_data, safe_area_insets), mime)
         } else {
             (content, mime)
         }
@@ -1092,7 +1134,7 @@ fn handle_http_request(
         if index.exists() {
             let content =
                 std::fs::read(&index).map_err(|e| format!("Index read error: {}", e))?;
-            (inject_scripts(&content, storage_data), "text/html; charset=utf-8")
+            (inject_scripts(&content, storage_data, safe_area_insets), "text/html; charset=utf-8")
         } else {
             return send_http_response(&mut stream, 404, "text/plain", b"Not Found");
         }
@@ -1274,12 +1316,29 @@ fn handle_proxy_request(
     send_http_response(stream, status, &content_type, body.as_ref())
 }
 
-fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>) -> Vec<u8> {
+fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>, safe_area_insets: Option<&str>) -> Vec<u8> {
     let html = String::from_utf8_lossy(html_bytes);
     let mut result = html.to_string();
 
     // Inject scripts right after <head> so they run before SPA bundles.
     let mut head_scripts = String::new();
+
+    // Inject real safe area inset values as CSS custom properties.
+    // Format: "top,right,bottom,left" in px (e.g. "47,0,34,0").
+    if let Some(insets) = safe_area_insets {
+        let parts: Vec<&str> = insets.split(',').collect();
+        if parts.len() == 4 {
+            let top = parts[0].trim();
+            let right = parts[1].trim();
+            let bottom = parts[2].trim();
+            let left = parts[3].trim();
+            head_scripts.push_str(&format!(
+                "<style id=\"__wsf_sai\">:root{{--wsf-sai-top:{}px;--wsf-sai-right:{}px;--wsf-sai-bottom:{}px;--wsf-sai-left:{}px;}}</style>",
+                top, right, bottom, left
+            ));
+        }
+    }
+
     head_scripts.push_str(SAFE_AREA_FIXED_PATCH_SCRIPT);
     head_scripts.push_str(CORS_PROXY_PATCH_SCRIPT);
 

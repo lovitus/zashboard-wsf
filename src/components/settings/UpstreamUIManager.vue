@@ -231,7 +231,7 @@ import {
   uiGetInfo,
   uiSetCustomUrls,
 } from '@/api/ui_manager'
-import { encodeStorageSnapshot } from '@/api/upstream_navigation'
+import { encodeStorageSnapshot, measureSafeAreaInsets } from '@/api/upstream_navigation'
 import { computed, onMounted, ref } from 'vue'
 
 const releases = ref<UpstreamRelease[]>([])
@@ -305,7 +305,8 @@ const handleActivate = async (tag: string) => {
   error.value = ''
   try {
     const storageB64 = encodeStorageSnapshot()
-    await uiActivateVersion(tag, storageB64)
+    const safeAreaInsets = measureSafeAreaInsets()
+    await uiActivateVersion(tag, storageB64, safeAreaInsets)
     await refreshInfo()
   } catch (e) {
     error.value = String(e)
