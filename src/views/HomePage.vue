@@ -109,7 +109,7 @@ import { RouterView, useRouter } from 'vue-router'
 
 const router = useRouter()
 const { swiperRef } = useSwipeRouter()
-const mobileSafeInset = 'max(env(safe-area-inset-top), env(safe-area-inset-bottom))'
+const mobileSafeInset = 'max(env(safe-area-inset-top), env(safe-area-inset-bottom), 20px)'
 
 const dockRef = ref<HTMLDivElement>()
 const { top: dockRefTop } = useElementBounding(dockRef)

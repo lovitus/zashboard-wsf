@@ -151,17 +151,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: '[${{ github.event.head_commit.timestamp }}] Zashboard v__VERSION__'
+          releaseName: '[EST] Zashboard v__VERSION__'
           releaseBody: |
-            ## Zashboard v__VERSION__ (${{ github.event.head_commit.timestamp }})
+            ## Zashboard v__VERSION__ (EST)
 
             ### Changes in this release
-            ${{ github.event.head_commit.message }}
 
-            ### Recent commits
-            ```
-            ${{ github.event.commits && join(github.event.commits.*.message, '\n') || 'See commit history for full details' }}
-            ```
+            <!-- Add your changes here -->
+
+            ---
 
             ### Release Info
             - **Date**: ${{ github.event.head_commit.timestamp }}
@@ -170,7 +168,9 @@ jobs:
 
             ### Documentation
             - README: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md
-            - CHANGELOG: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md
+            - Issues: https://github.com/${{ github.repository }}/issues
+
+            ---
 
             ### Downloads
             Release assets for each platform are attached below.
@@ -279,6 +279,8 @@ jobs:
               content = content.replace("<application", '<application android:networkSecurityConfig="@xml/network_security_config"', 1)
           if "windowSoftInputMode" not in content:
               content = content.replace("<activity", '<activity android:windowSoftInputMode="adjustResize"', 1)
+          if "android:fitSystemWindows" not in content:
+              content = content.replace("<activity", '<activity android:fitSystemWindows="true"', 1)
 
           with open(manifest_path, "w") as f:
               f.write(content)

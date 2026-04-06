@@ -136,7 +136,7 @@ useKeyboard()
     ref="app"
     id="app-content"
     :class="[
-      'bg-base-100 flex h-dvh w-screen overflow-hidden',
+      'bg-base-100 flex h-screen w-screen overflow-hidden',
       fontClassName,
       backgroundImage &&
         `custom-background-${dashboardTransparent} custom-background bg-cover bg-center`,
