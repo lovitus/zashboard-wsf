@@ -1443,6 +1443,19 @@ fn patch_css_env(css: &str, top: u32, bottom: u32) -> String {
     result
 }
 
+use crate::safe_area;
+
+#[tauri::command]
+pub fn get_safe_area_insets() -> String {
+    let insets = safe_area::get_safe_area_insets();
+    format!("{},{},{},{}", 
+        insets.top as u32, 
+        insets.right as u32, 
+        insets.bottom as u32, 
+        insets.left as u32
+    )
+}
+
 fn send_http_response(
     stream: &mut std::net::TcpStream,
     status: u16,
