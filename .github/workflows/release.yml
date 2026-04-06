@@ -182,19 +182,6 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        abi: [arm64-v8a, armeabi-v7a]
-        include:
-          - abi: arm64-v8a
-            tauri-abi: arm64
-            rust-target: aarch64-linux-android
-            sidecar-suffix: linux-arm64
-          - abi: armeabi-v7a
-            tauri-abi: arm
-            rust-target: armv7-linux-androideabi
-            sidecar-suffix: linux-armv7
     steps:
       - uses: actions/checkout@v4
 
@@ -204,11 +191,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK & build-tools
         uses: android-actions/setup-android@v3
 
-      - name: Setup NDK
-        run: sdkmanager "ndk;27.0.12077973"
+      - name: Setup NDK + build-tools
+        run: |
+          sdkmanager "ndk;27.0.12077973" "build-tools;34.0.0"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -218,10 +206,15 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Install Rust stable
+      - name: Install Rust stable (both targets)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust-target }}
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -229,22 +222,32 @@ jobs:
       - name: Initialize Android project
         run: pnpm tauri android init
 
-      - name: Download sidecar binary
+      - name: Download sidecar binaries (both ABIs in parallel)
         run: |
           JNILIBS="src-tauri/gen/android/app/src/main/jniLibs"
-          mkdir -p "$JNILIBS/${{ matrix.abi }}"
+          mkdir -p "$JNILIBS/arm64-v8a" "$JNILIBS/armeabi-v7a"
 
-          # gust
-          gh release download "$GUST_TAG" --repo lovitus/gust \
-            -p "gost-${{ matrix.sidecar-suffix }}-${GUST_VERSION}.gz" -D /tmp
-          gunzip -f "/tmp/gost-${{ matrix.sidecar-suffix }}-${GUST_VERSION}.gz"
-          mv "/tmp/gost-${{ matrix.sidecar-suffix }}-${GUST_VERSION}" "$JNILIBS/${{ matrix.abi }}/libgust.so"
+          # Download all 4 binaries concurrently
+          download_and_place() {
+            local suffix="$1" abi="$2"
+            gh release download "$GUST_TAG" --repo lovitus/gust \
+              -p "gost-${suffix}-${GUST_VERSION}.gz" -D /tmp &
+            gh release download "$SLIDER_TAG" --repo lovitus/slider \
+              -p "slider-${suffix}-${SLIDER_VERSION}.gz" -D /tmp &
+          }
+          download_and_place linux-arm64  arm64-v8a
+          download_and_place linux-armv7  armeabi-v7a
+          wait
 
-          # slider
-          gh release download "$SLIDER_TAG" --repo lovitus/slider \
-            -p "slider-${{ matrix.sidecar-suffix }}-${SLIDER_VERSION}.gz" -D /tmp
-          gunzip -f "/tmp/slider-${{ matrix.sidecar-suffix }}-${SLIDER_VERSION}.gz"
-          mv "/tmp/slider-${{ matrix.sidecar-suffix }}-${SLIDER_VERSION}" "$JNILIBS/${{ matrix.abi }}/libslider.so"
+          # Decompress and place
+          for suffix_abi in "linux-arm64:arm64-v8a" "linux-armv7:armeabi-v7a"; do
+            suffix="${suffix_abi%%:*}"
+            abi="${suffix_abi##*:}"
+            gunzip -f "/tmp/gost-${suffix}-${GUST_VERSION}.gz"
+            mv "/tmp/gost-${suffix}-${GUST_VERSION}" "$JNILIBS/${abi}/libgust.so"
+            gunzip -f "/tmp/slider-${suffix}-${SLIDER_VERSION}.gz"
+            mv "/tmp/slider-${suffix}-${SLIDER_VERSION}" "$JNILIBS/${abi}/libslider.so"
+          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -284,58 +287,48 @@ jobs:
               f.write(content)
           EOF
 
-      - name: Build Android APK
-        run: |
-          # Use --split-per-abi to generate ABI-specific APKs
-          pnpm tauri android build --apk --split-per-abi
+      - name: Build Android APKs (arm64-v8a + armeabi-v7a in one Gradle run)
+        run: pnpm tauri android build --apk --split-per-abi
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
-      - name: Sign APK
+      - name: Sign & rename APKs
         run: |
-          sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          # When using --split-per-abi, APKs are in Tauri ABI subdirectories
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${{ matrix.tauri-abi }}/release"
-          
-          echo "=== APK files for ${{ matrix.abi }} (Tauri ABI: ${{ matrix.tauri-abi }}) ==="
-          echo "Checking: $APK_DIR"
-          find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || echo "No APKs found in $APK_DIR"
+          sign_apk() {
+            local tauri_abi="$1" abi="$2"
+            local APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${tauri_abi}/release"
+            local UNSIGNED
+            UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
+            if [ -z "$UNSIGNED" ]; then
+              echo "ERROR: No APK found for ${abi} (tauri ABI: ${tauri_abi})"
+              find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" 2>/dev/null || true
+              exit 1
+            fi
+            "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
+            mv "${UNSIGNED}.aligned" "$UNSIGNED"
+            "$BT/apksigner" sign \
+              --ks "src-tauri/open-release.keystore" \
+              --ks-pass pass:"zashboard-open-2026" \
+              --ks-key-alias "zashboard" \
+              --key-pass pass:"zashboard-open-2026" \
+              "$UNSIGNED"
+            "$BT/apksigner" verify --verbose "$UNSIGNED"
+            local DIR
+            DIR=$(dirname "$UNSIGNED")
+            mv "$UNSIGNED" "${DIR}/zashboard-${abi}-release.apk"
+            echo "Signed: ${DIR}/zashboard-${abi}-release.apk"
+          }
 
-          # Find the APK for this specific ABI
-          UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
-          if [ -z "$UNSIGNED" ]; then
-            echo "ERROR: No APK found for ${{ matrix.abi }} (Tauri ABI: ${{ matrix.tauri-abi }})"
-            find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null || true
-            exit 1
-          fi
+          sign_apk arm64    arm64-v8a
+          sign_apk arm      armeabi-v7a
 
-          echo "Found APK: $UNSIGNED"
-
-          # Zipalign and sign
-          "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
-          mv "${UNSIGNED}.aligned" "$UNSIGNED"
-
-          "$BT/apksigner" sign \
-            --ks "src-tauri/open-release.keystore" \
-            --ks-pass pass:"zashboard-open-2026" \
-            --ks-key-alias "zashboard" \
-            --key-pass pass:"zashboard-open-2026" \
-            "$UNSIGNED"
-
-          "$BT/apksigner" verify --verbose "$UNSIGNED"
-
-          # Rename to include Android ABI name
-          DIR=$(dirname "$UNSIGNED")
-          mv "$UNSIGNED" "${DIR}/zashboard-${{ matrix.abi }}-release.apk"
-          echo "Signed: ${DIR}/zashboard-${{ matrix.abi }}-release.apk"
-
-      - name: Upload APK
+      - name: Upload APKs
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           draft: false
-          files: src-tauri/gen/android/app/build/outputs/apk/**/zashboard-${{ matrix.abi }}-release.apk
+          files: src-tauri/gen/android/app/build/outputs/apk/**/zashboard-*-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
