@@ -740,8 +740,9 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         var oldStyles = []; // [element, style]
         btnFs.onclick=function(ev){
           try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
-          var container = document.querySelector('#app') || document.querySelector('#root') || document.querySelector('main') || document.body;
+          var container = document.querySelector('#app') || document.querySelector('#root') || document.querySelector('#app-content') || document.querySelector('main') || document.body;
           var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, bottom:34};
+          var scriptId = '__wsf_safe_style';
           
           if (!isPadded) {
               oldStyles = [
@@ -755,25 +756,39 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
               var bg = window.getComputedStyle(container).backgroundColor;
               if (!bg || bg==='transparent' || bg==='rgba(0, 0, 0, 0)') bg = window.getComputedStyle(document.body).backgroundColor;
 
-              // Force safe boundaries
+              // [INVASIVE] Brute-force override all full-height classes to respect the parent boundaries
+              var style = document.createElement('style');
+              style.id = scriptId;
+              style.textContent = `
+                #app, #app-content, .h-dvh, .h-screen, .h-full, [style*="height: 100vh"], [style*="height: 100dvh"], [style*="height: 100%"] {
+                  height: 100% !important;
+                  max-height: 100% !important;
+                  min-height: 100% !important;
+                }
+                html, body { overflow: hidden !important; height: 100% !important; margin:0 !important; padding:0 !important; }
+              `;
+              document.head.appendChild(style);
+
+              // Force fixed boundaries on root container
               container.style.setProperty('position', 'fixed', 'important');
               container.style.setProperty('top', top, 'important');
               container.style.setProperty('bottom', bottom, 'important');
               container.style.setProperty('left', '0', 'important');
               container.style.setProperty('right', '0', 'important');
               container.style.setProperty('height', 'auto', 'important');
+              container.style.setProperty('width', '100vw', 'important');
               container.style.setProperty('margin', '0', 'important');
               container.style.setProperty('overflow', 'auto', 'important');
               container.style.setProperty('box-sizing', 'border-box', 'important');
               container.style.setProperty('z-index', '1', 'important');
 
-              document.documentElement.style.setProperty('overflow', 'hidden', 'important');
-              document.body.style.setProperty('overflow', 'hidden', 'important');
               document.body.style.setProperty('background-color', bg, 'important');
               
               btnFs.textContent = '\u21A5 Reset Layout';
               isPadded = true;
           } else {
+              var s = document.getElementById(scriptId);
+              if(s) s.remove();
               oldStyles.forEach(function(item){
                 if(item.style) item.el.setAttribute('style', item.style);
                 else item.el.removeAttribute('style');
