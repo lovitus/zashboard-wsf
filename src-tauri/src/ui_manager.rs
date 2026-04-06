@@ -563,6 +563,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 
   var fabOpen=false;
   var autoCloseTimer=null;
+  var dragState={isDragging:false,startX:0,startY:0,initialRight:0,initialBottom:0};
 
   function goUpstreamSetup(){
     try{
@@ -642,7 +643,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 
   function trySwitchBuiltin(label){
     try{
-      if(label) label.textContent='Switching\u2026';
+      if(label) label.textContent='Switching…';
 
       var postBuiltin=function(){
         return fetch('/__wsf_builtin', { method:'POST', cache:'no-store', keepalive:true }).catch(function(){});
@@ -659,7 +660,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
       }, 2200);
 
       setTimeout(function(){
-        if(label) label.textContent='\u21A9 Built-in UI';
+        if(label) label.textContent='↩ Built-in UI';
       }, 4200);
     }catch(_){}
   }
@@ -672,7 +673,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
     menu.style.opacity=open?'1':'0';
     menu.style.pointerEvents=open?'auto':'none';
     menu.style.transform=open?'translateY(0) scale(1)':'translateY(8px) scale(0.9)';
-    trigger.textContent=open?'\u2715':'\u2699';
+    trigger.textContent=open?'✕':'⚙';
     if(autoCloseTimer) clearTimeout(autoCloseTimer);
     if(open){
       autoCloseTimer=setTimeout(function(){ setFabOpen(false); }, 5000);
@@ -692,7 +693,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
       if(!document.getElementById('__wsf_fab')){
         var fab=document.createElement('div');
         fab.id='__wsf_fab';
-        fab.style.cssText='position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 16px);z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:6px;';
+        fab.style.cssText='position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 16px);z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:6px;width:auto;height:auto;pointer-events:none;';
 
         var menu=document.createElement('div');
         menu.id='__wsf_fab_menu';
@@ -701,9 +702,9 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         var btnBuiltin=document.createElement('button');
         btnBuiltin.type='button';
         var lblBuiltin=document.createElement('span');
-        lblBuiltin.textContent='\u21A9 Built-in UI';
+        lblBuiltin.textContent='↩ Built-in UI';
         btnBuiltin.appendChild(lblBuiltin);
-        btnBuiltin.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(59,130,246,.88);color:#fff;padding:7px 12px;border-radius:20px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;';
+        btnBuiltin.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(59,130,246,.88);color:#fff;padding:7px 12px;border-radius:20px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;pointer-events:auto;';
         btnBuiltin.onmouseenter=function(){btnBuiltin.style.background='rgba(59,130,246,1)';resetAutoClose();};
         btnBuiltin.onmouseleave=function(){btnBuiltin.style.background='rgba(59,130,246,.88)';};
         btnBuiltin.onclick=function(ev){
@@ -714,8 +715,8 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
 
         var btnSetup=document.createElement('button');
         btnSetup.type='button';
-        btnSetup.textContent='\u2699 Setup';
-        btnSetup.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.78);color:#1f2937;padding:7px 12px;border-radius:20px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;';
+        btnSetup.textContent='⚙ Setup';
+        btnSetup.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.78);color:#1f2937;padding:7px 12px;border-radius:20px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;pointer-events:auto;';
         btnSetup.onmouseenter=function(){btnSetup.style.background='rgba(255,255,255,.95)';resetAutoClose();};
         btnSetup.onmouseleave=function(){btnSetup.style.background='rgba(255,255,255,.78)';};
         btnSetup.onclick=function(ev){
@@ -731,8 +732,8 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         var trigger=document.createElement('button');
         trigger.id='__wsf_fab_trigger';
         trigger.type='button';
-        trigger.textContent='\u2699';
-        trigger.style.cssText='width:36px;height:36px;border-radius:50%;border:0;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;background:rgba(107,114,128,.55);color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .15s,transform .15s;';
+        trigger.textContent='⚙';
+        trigger.style.cssText='width:36px;height:36px;border-radius:50%;border:0;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;background:rgba(107,114,128,.55);color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .15s,transform .15s;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;';
         trigger.onmouseenter=function(){trigger.style.background='rgba(107,114,128,.75)';};
         trigger.onmouseleave=function(){trigger.style.background='rgba(107,114,128,.55)';};
         trigger.onclick=function(ev){
@@ -740,6 +741,44 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
           setFabOpen(!fabOpen);
           return false;
         };
+
+        function startDrag(ev){
+          if(fabOpen) return; // Don't drag when menu is open
+          dragState.isDragging=true;
+          dragState.startX=ev.clientX||ev.touches[0].clientX;
+          dragState.startY=ev.clientY||ev.touches[0].clientY;
+          var rect=fab.getBoundingClientRect();
+          dragState.initialRight=parseFloat(fab.style.right)||12;
+          dragState.initialBottom=parseFloat(fab.style.bottom)||16;
+          trigger.style.cursor='grabbing';
+        }
+        function moveDrag(ev){
+          if(!dragState.isDragging) return;
+          var clientX=ev.clientX||ev.touches[0].clientX;
+          var clientY=ev.clientY||ev.touches[0].clientY;
+          var dx=clientX-dragState.startX;
+          var dy=clientY-dragState.startY;
+          var newRight=dragState.initialRight-dx;
+          var newBottom=dragState.initialBottom-dy;
+          var vw=window.innerWidth;
+          var vh=window.innerHeight;
+          newRight=Math.max(12,Math.min(vw-48,newRight));
+          newBottom=Math.max(12,Math.min(vh-48,newBottom));
+          fab.style.right=newRight+'px';
+          fab.style.bottom=newBottom+'px';
+        }
+        function endDrag(){
+          if(dragState.isDragging){
+            dragState.isDragging=false;
+            trigger.style.cursor='pointer';
+          }
+        }
+        trigger.addEventListener('mousedown',startDrag);
+        trigger.addEventListener('touchstart',startDrag,{passive:true});
+        document.addEventListener('mousemove',moveDrag);
+        document.addEventListener('touchmove',moveDrag,{passive:true});
+        document.addEventListener('mouseup',endDrag);
+        document.addEventListener('touchend',endDrag);
 
         fab.appendChild(menu);
         fab.appendChild(trigger);
@@ -780,8 +819,7 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, right:0, bottom:34, left:0};
   if(!insets.top && !insets.bottom) return;
 
-  // Force safe area padding on html and body using !important
-  // This is the most reliable method that works regardless of CSS framework
+  // Force safe area padding using !important - most aggressive approach
   function applySafeArea(){
     var html = document.documentElement;
     var body = document.body;
@@ -798,32 +836,36 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
     html.style.setProperty('--wsf-sai-left', insets.left + 'px', 'important');
     html.style.setProperty('--wsf-sai-right', insets.right + 'px', 'important');
     
-    // Force padding on body if it has none, or add to existing padding
+    // Force margin-top on html as backup (some frameworks use margin)
+    html.style.setProperty('margin-top', insets.top + 'px', 'important');
+    
+    // Force padding on body
     if(body){
-      var computed = getComputedStyle(body);
-      var existingTop = parseFloat(computed.paddingTop) || 0;
-      var existingBottom = parseFloat(computed.paddingBottom) || 0;
-      
-      // Only add if not already accounted for (avoid double padding)
-      if(existingTop < insets.top){
-        body.style.setProperty('padding-top', insets.top + 'px', 'important');
-      }
-      if(existingBottom < insets.bottom){
-        body.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
-      }
+      // Always force padding-top to be at least safe area
+      body.style.setProperty('padding-top', insets.top + 'px', 'important');
+      body.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
     }
     
-    // Also try common container selectors
-    var selectors = ['#app', '#root', 'main', '.app', '.main', '[class*="app"]', '[class*="App"]'];
+    // Aggressively target all possible container elements
+    var selectors = ['#app', '#root', 'main', '.app', '.main', '[class*="app"]', '[class*="App"]', '[class*="layout"]', '[class*="Layout"]', 'div[class*="container"]', 'div[class*="Container"]'];
     selectors.forEach(function(sel){
-      var el = document.querySelector(sel);
-      if(el && el !== body){
-        var cs = getComputedStyle(el);
-        var pt = parseFloat(cs.paddingTop) || 0;
-        var pb = parseFloat(cs.paddingBottom) || 0;
-        if(pt < insets.top) el.style.setProperty('padding-top', insets.top + 'px', 'important');
-        if(pb < insets.bottom) el.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
-      }
+      var els = document.querySelectorAll(sel);
+      els.forEach(function(el){
+        if(el && el !== body){
+          el.style.setProperty('padding-top', insets.top + 'px', 'important');
+          el.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
+        }
+      });
+    });
+    
+    // Directly patch any element using env() in its style attribute
+    document.querySelectorAll('[style*="safe-area"]').forEach(function(el){
+      var s = el.getAttribute('style') || '';
+      s = s.replace(/env\(\s*safe-area-inset-top\s*(,[^)]+)?\)/g, insets.top + 'px');
+      s = s.replace(/env\(\s*safe-area-inset-bottom\s*(,[^)]+)?\)/g, insets.bottom + 'px');
+      s = s.replace(/env\(\s*safe-area-inset-left\s*(,[^)]+)?\)/g, insets.left + 'px');
+      s = s.replace(/env\(\s*safe-area-inset-right\s*(,[^)]+)?\)/g, insets.right + 'px');
+      el.setAttribute('style', s);
     });
   }
 
@@ -837,8 +879,18 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   
   // Re-apply when DOM changes
   if(window.MutationObserver){
-    new MutationObserver(function(){
-      applySafeArea();
+    new MutationObserver(function(mutations){
+      var shouldPatch = false;
+      mutations.forEach(function(mutation){
+        if(mutation.type === 'childList'){
+          mutation.addedNodes.forEach(function(node){
+            if(node.nodeType === 1 && (node.tagName === 'DIV' || node.tagName === 'MAIN' || node.tagName === 'SECTION')){
+              shouldPatch = true;
+            }
+          });
+        }
+      });
+      if(shouldPatch) applySafeArea();
     }).observe(document.documentElement, {childList:true, subtree:true});
   }
 })();
