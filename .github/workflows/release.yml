@@ -188,9 +188,11 @@ jobs:
         abi: [arm64-v8a, armeabi-v7a]
         include:
           - abi: arm64-v8a
+            tauri-abi: arm64
             rust-target: aarch64-linux-android
             sidecar-suffix: linux-arm64
           - abi: armeabi-v7a
+            tauri-abi: arm
             rust-target: armv7-linux-androideabi
             sidecar-suffix: linux-armv7
     steps:
@@ -294,22 +296,17 @@ jobs:
           sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          # When using --split-per-abi, APKs are in ABI subdirectories
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${{ matrix.abi }}/release"
-          if [ ! -d "$APK_DIR" ]; then
-            APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release/${{ matrix.abi }}"
-          fi
+          # When using --split-per-abi, APKs are in Tauri ABI subdirectories
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${{ matrix.tauri-abi }}/release"
           
-          echo "=== APK files for ${{ matrix.abi }} ==="
+          echo "=== APK files for ${{ matrix.abi }} (Tauri ABI: ${{ matrix.tauri-abi }}) ==="
           echo "Checking: $APK_DIR"
           find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || echo "No APKs found in $APK_DIR"
 
           # Find the APK for this specific ABI
           UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
           if [ -z "$UNSIGNED" ]; then
-            echo "ERROR: No APK found for ${{ matrix.abi }}"
-            echo "=== Checking fallback path: src-tauri/gen/android/app/build/outputs/apk/release/${{ matrix.abi }} ==="
-            find "src-tauri/gen/android/app/build/outputs/apk/release/${{ matrix.abi }}" -name "*.apk" -type f 2>/dev/null || echo "No such directory"
+            echo "ERROR: No APK found for ${{ matrix.abi }} (Tauri ABI: ${{ matrix.tauri-abi }})"
             find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null || true
             exit 1
           fi
@@ -329,7 +326,7 @@ jobs:
 
           "$BT/apksigner" verify --verbose "$UNSIGNED"
 
-          # Rename to include ABI name
+          # Rename to include Android ABI name
           DIR=$(dirname "$UNSIGNED")
           mv "$UNSIGNED" "${DIR}/zashboard-${{ matrix.abi }}-release.apk"
           echo "Signed: ${DIR}/zashboard-${{ matrix.abi }}-release.apk"
