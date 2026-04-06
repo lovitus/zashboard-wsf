@@ -279,8 +279,8 @@ jobs:
               content = content.replace("<application", '<application android:networkSecurityConfig="@xml/network_security_config"', 1)
           if "windowSoftInputMode" not in content:
               content = content.replace("<activity", '<activity android:windowSoftInputMode="adjustResize"', 1)
-          if "android:fitSystemWindows" not in content:
-              content = content.replace("<activity", '<activity android:fitSystemWindows="true"', 1)
+          if "android:fitsSystemWindows" not in content:
+              content = content.replace("<activity", '<activity android:fitsSystemWindows="true"', 1)
 
           with open(manifest_path, "w") as f:
               f.write(content)
