@@ -773,70 +773,100 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   if(window.__WSF_SAFE_AREA_PATCHED__) return;
   window.__WSF_SAFE_AREA_PATCHED__=true;
 
-  var map={
-    'env(safe-area-inset-top)':'var(--wsf-sai-top)',
-    'env(safe-area-inset-right)':'var(--wsf-sai-right)',
-    'env(safe-area-inset-bottom)':'var(--wsf-sai-bottom)',
-    'env(safe-area-inset-left)':'var(--wsf-sai-left)',
-    'env(safe-area-inset-top, 0px)':'var(--wsf-sai-top)',
-    'env(safe-area-inset-right, 0px)':'var(--wsf-sai-right)',
-    'env(safe-area-inset-bottom, 0px)':'var(--wsf-sai-bottom)',
-    'env(safe-area-inset-left, 0px)':'var(--wsf-sai-left)'
-  };
-
-  function patchStyle(el){
+  function getInsets(){
     try{
-      var s=el.getAttribute('style');
-      if(!s||s.indexOf('safe-area-inset')===-1) return;
-      var patched=s;
-      for(var k in map){
-        if(map.hasOwnProperty(k)) patched=patched.split(k).join(map[k]);
+      var s=getComputedStyle(document.documentElement);
+      return {
+        top:parseFloat(s.getPropertyValue('--wsf-sai-top'))||0,
+        right:parseFloat(s.getPropertyValue('--wsf-sai-right'))||0,
+        bottom:parseFloat(s.getPropertyValue('--wsf-sai-bottom'))||0,
+        left:parseFloat(s.getPropertyValue('--wsf-sai-left'))||0
+      };
+    }catch(_){return {top:0,right:0,bottom:0,left:0};}
+  }
+
+  function injectOverrides(){
+    try{
+      var i=getInsets();
+      if(i.top===0&&i.bottom===0&&i.left===0&&i.right===0) return;
+
+      var css='';
+      // Override common safe-area patterns with !important
+      // Padding
+      css+='[style*="padding-top:env(safe-area-inset-top)"]{padding-top:'+i.top+'px!important}';
+      css+='[style*="padding-bottom:env(safe-area-inset-bottom)"]{padding-bottom:'+i.bottom+'px!important}';
+      css+='[style*="padding-left:env(safe-area-inset-left)"]{padding-left:'+i.left+'px!important}';
+      css+='[style*="padding-right:env(safe-area-inset-right)"]{padding-right:'+i.right+'px!important}';
+      // Margin
+      css+='[style*="margin-top:env(safe-area-inset-top)"]{margin-top:'+i.top+'px!important}';
+      css+='[style*="margin-bottom:env(safe-area-inset-bottom)"]{margin-bottom:'+i.bottom+'px!important}';
+      css+='[style*="margin-left:env(safe-area-inset-left)"]{margin-left:'+i.left+'px!important}';
+      css+='[style*="margin-right:env(safe-area-inset-right)"]{margin-right:'+i.right+'px!important}';
+      // Top/Right/Bottom/Left positioning
+      css+='[style*="top:env(safe-area-inset-top)"]{top:'+i.top+'px!important}';
+      css+='[style*="bottom:env(safe-area-inset-bottom)"]{bottom:'+i.bottom+'px!important}';
+      css+='[style*="left:env(safe-area-inset-left)"]{left:'+i.left+'px!important}';
+      css+='[style*="right:env(safe-area-inset-right)"]{right:'+i.right+'px!important}';
+      // Height with env
+      css+='[style*="height:env(safe-area-inset-top)"]{height:'+i.top+'px!important}';
+      css+='[style*="height:env(safe-area-inset-bottom)"]{height:'+i.bottom+'px!important}';
+      // calc() patterns
+      css+='[style*="env(safe-area-inset-top))"]{padding-top:'+i.top+'px!important}';
+      css+='[style*="env(safe-area-inset-bottom))"]{padding-bottom:'+i.bottom+'px!important}';
+      // Override html/body padding that might be set by upstream
+      css+='html{padding-top:'+i.top+'px!important;padding-bottom:'+i.bottom+'px!important}';
+
+      var style=document.createElement('style');
+      style.id='__wsf_sai_override';
+      style.textContent=css;
+      (document.head||document.documentElement).appendChild(style);
+
+      // Patch inline styles directly too (for dynamic elements)
+      function patchEl(el){
+        try{
+          var s=el.getAttribute('style');
+          if(!s||s.indexOf('safe-area')===-1) return;
+          var patched=s
+            .replace(/env\(\s*safe-area-inset-top\s*(,[^)]+)?\)/gi,i.top+'px')
+            .replace(/env\(\s*safe-area-inset-right\s*(,[^)]+)?\)/gi,i.right+'px')
+            .replace(/env\(\s*safe-area-inset-bottom\s*(,[^)]+)?\)/gi,i.bottom+'px')
+            .replace(/env\(\s*safe-area-inset-left\s*(,[^)]+)?\)/gi,i.left+'px');
+          if(patched!==s) el.setAttribute('style',patched);
+        }catch(_){}
       }
-      if(patched!==s) el.setAttribute('style',patched);
-    }catch(_){}
-  }
 
-  function patchAll(){
-    try{
-      var els=document.querySelectorAll('[style*="safe-area-inset"]');
-      for(var i=0;i<els.length;i++) patchStyle(els[i]);
-    }catch(_){}
-  }
+      // Initial patch
+      document.querySelectorAll('[style*="safe-area"]').forEach(patchEl);
 
-  function observe(){
-    try{
-      if(!window.MutationObserver) return;
-      new MutationObserver(function(mutations){
-        for(var i=0;i<mutations.length;i++){
-          var m=mutations[i];
-          if(m.type==='attributes'&&m.attributeName==='style'){
-            patchStyle(m.target);
-          }
-          if(m.type==='childList'){
-            for(var j=0;j<m.addedNodes.length;j++){
-              var n=m.addedNodes[j];
-              if(n.nodeType===1){
-                patchStyle(n);
-                if(n.querySelectorAll){
-                  var sub=n.querySelectorAll('[style*="safe-area-inset"]');
-                  for(var k=0;k<sub.length;k++) patchStyle(sub[k]);
+      // Observe for dynamic changes
+      if(window.MutationObserver){
+        new MutationObserver(function(muts){
+          muts.forEach(function(m){
+            if(m.type==='attributes'&&m.attributeName==='style'){
+              patchEl(m.target);
+            }else if(m.type==='childList'){
+              m.addedNodes.forEach(function(n){
+                if(n.nodeType===1){
+                  patchEl(n);
+                  if(n.querySelectorAll){
+                    n.querySelectorAll('[style*="safe-area"]').forEach(patchEl);
+                  }
                 }
-              }
+              });
             }
-          }
-        }
-      }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
+          });
+        }).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
+      }
     }catch(_){}
   }
 
   if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded',function(){patchAll();observe();},{once:true});
+    document.addEventListener('DOMContentLoaded',injectOverrides,{once:true});
   }else{
-    patchAll();observe();
+    injectOverrides();
   }
-  setTimeout(patchAll,100);
-  setTimeout(patchAll,500);
-  setTimeout(patchAll,1500);
+  setTimeout(injectOverrides,100);
+  setTimeout(injectOverrides,500);
 })();
 </script>"#;
 
