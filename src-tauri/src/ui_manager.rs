@@ -394,7 +394,6 @@ fn extract_zip(bytes: &[u8], version_dir: &PathBuf) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn ui_activate_version(
-    window: tauri::Window,
     state: State<'_, Mutex<UiManagerState>>,
     tag: String,
     storage_data: Option<String>,
@@ -427,8 +426,6 @@ pub async fn ui_activate_version(
     s.safe_area_insets = safe_area_insets;
     write_active_version(&s.base_dir, Some(&tag));
 
-    let _ = window.set_fullscreen(true);
-
     let url = format!("http://127.0.0.1:{}", port);
     eprintln!("Activated upstream UI version {} at {}", tag, url);
     Ok(url)
@@ -436,7 +433,6 @@ pub async fn ui_activate_version(
 
 #[tauri::command]
 pub async fn ui_deactivate(
-    window: tauri::Window,
     state: State<'_, Mutex<UiManagerState>>,
 ) -> Result<String, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
@@ -454,8 +450,6 @@ pub async fn ui_deactivate(
     write_active_version(&s.base_dir, None);
     write_storage_data(&s.base_dir, None);
     write_safe_area_insets(&s.base_dir, None);
-
-    let _ = window.set_fullscreen(false);
 
     eprintln!("Deactivated upstream UI, switched to built-in");
     Ok("Switched to built-in UI".to_string())
@@ -734,8 +728,39 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
           setFabOpen(false);
           return false;
         };
+        
+        var btnFs=document.createElement('button');
+        btnFs.type='button';
+        btnFs.textContent='\u26F6 Fullscreen';
+        btnFs.style.cssText='display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.78);color:#1f2937;padding:12px 16px;border-radius:24px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:14px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;height:48px;pointer-events:auto;';
+        btnFs.onmouseenter=function(){btnFs.style.background='rgba(255,255,255,.95)';resetAutoClose();};
+        btnFs.onmouseleave=function(){btnFs.style.background='rgba(255,255,255,.78)';};
+        btnFs.onclick=function(ev){
+          try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
+          try {
+            if (!document.fullscreenElement) {
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen();
+                } else if (document.documentElement.webkitRequestFullscreen) {
+                    document.documentElement.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+          } catch(err) { console.error(err); }
+          setFabOpen(false);
+          return false;
+        };
+        document.addEventListener('fullscreenchange', function() {
+            btnFs.textContent = document.fullscreenElement ? '\u2ADF Exit Fullscreen' : '\u26F6 Fullscreen';
+        });
 
         menu.appendChild(btnBuiltin);
+        menu.appendChild(btnFs);
         menu.appendChild(btnSetup);
 
         // Larger trigger button (48px), more transparent
