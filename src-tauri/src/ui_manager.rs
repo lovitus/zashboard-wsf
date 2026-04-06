@@ -693,7 +693,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
       if(!document.getElementById('__wsf_fab')){
         var fab=document.createElement('div');
         fab.id='__wsf_fab';
-        fab.style.cssText='position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 16px);z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:6px;width:auto;height:auto;pointer-events:none;';
+        fab.style.cssText='position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 60px);z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:6px;width:auto;height:auto;pointer-events:none;';
 
         var menu=document.createElement('div');
         menu.id='__wsf_fab_menu';
@@ -704,7 +704,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         var lblBuiltin=document.createElement('span');
         lblBuiltin.textContent='↩ Built-in UI';
         btnBuiltin.appendChild(lblBuiltin);
-        btnBuiltin.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(59,130,246,.88);color:#fff;padding:7px 12px;border-radius:20px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;pointer-events:auto;';
+        btnBuiltin.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(59,130,246,.88);color:#fff;padding:8px 14px;border-radius:20px;border:0;cursor:pointer;font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;pointer-events:auto;';
         btnBuiltin.onmouseenter=function(){btnBuiltin.style.background='rgba(59,130,246,1)';resetAutoClose();};
         btnBuiltin.onmouseleave=function(){btnBuiltin.style.background='rgba(59,130,246,.88)';};
         btnBuiltin.onclick=function(ev){
@@ -716,7 +716,7 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         var btnSetup=document.createElement('button');
         btnSetup.type='button';
         btnSetup.textContent='⚙ Setup';
-        btnSetup.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.78);color:#1f2937;padding:7px 12px;border-radius:20px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;pointer-events:auto;';
+        btnSetup.style.cssText='display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.78);color:#1f2937;padding:8px 14px;border-radius:20px;border:1px solid rgba(107,114,128,.25);cursor:pointer;font-size:13px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.15);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;transition:background .15s;pointer-events:auto;';
         btnSetup.onmouseenter=function(){btnSetup.style.background='rgba(255,255,255,.95)';resetAutoClose();};
         btnSetup.onmouseleave=function(){btnSetup.style.background='rgba(255,255,255,.78)';};
         btnSetup.onclick=function(ev){
@@ -733,9 +733,9 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         trigger.id='__wsf_fab_trigger';
         trigger.type='button';
         trigger.textContent='⚙';
-        trigger.style.cssText='width:36px;height:36px;border-radius:50%;border:0;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;background:rgba(107,114,128,.55);color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .15s,transform .15s;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;';
-        trigger.onmouseenter=function(){trigger.style.background='rgba(107,114,128,.75)';};
-        trigger.onmouseleave=function(){trigger.style.background='rgba(107,114,128,.55)';};
+        trigger.style.cssText='width:42px;height:42px;border-radius:50%;border:0;cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;background:rgba(107,114,128,.65);color:#fff;box-shadow:0 2px 10px rgba(0,0,0,.25);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .15s,transform .15s;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;';
+        trigger.onmouseenter=function(){trigger.style.background='rgba(107,114,128,.85)';};
+        trigger.onmouseleave=function(){trigger.style.background='rgba(107,114,128,.65)';};
         trigger.onclick=function(ev){
           try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
           setFabOpen(!fabOpen);
@@ -818,9 +818,26 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   // Read insets from server-injected global var, or use sensible defaults
   var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, right:0, bottom:34, left:0};
 
-  // Only patch elements that explicitly use env() in inline styles
-  // CSS files are already processed server-side to replace env() with actual values
-  function patchInlineEnv(){
+  // Force safe area on body and common containers - targeted approach
+  function applySafeArea(){
+    var body = document.body;
+    if(body){
+      // Force body padding-top to avoid status bar
+      body.style.setProperty('padding-top', insets.top + 'px', 'important');
+      body.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
+    }
+    
+    // Target common container selectors used by zashboard
+    var selectors = ['#app', '#root', 'main', '.app', '.main', '[class*="app"]', '[class*="App"]'];
+    selectors.forEach(function(sel){
+      var el = document.querySelector(sel);
+      if(el && el !== body){
+        el.style.setProperty('padding-top', insets.top + 'px', 'important');
+        el.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
+      }
+    });
+    
+    // Patch any inline env() styles
     document.querySelectorAll('[style*="safe-area"]').forEach(function(el){
       var s = el.getAttribute('style') || '';
       if(s.indexOf('env(') === -1) return;
@@ -832,13 +849,21 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
     });
   }
 
-  // Patch immediately and on DOM changes
-  patchInlineEnv();
-  setTimeout(patchInlineEnv, 100);
-  setTimeout(patchInlineEnv, 500);
+  // Apply immediately and on DOM changes
+  applySafeArea();
+  setTimeout(applySafeArea, 100);
+  setTimeout(applySafeArea, 500);
   
   if(window.MutationObserver){
-    new MutationObserver(patchInlineEnv).observe(document.documentElement, {childList:true, subtree:true});
+    new MutationObserver(function(mutations){
+      var shouldPatch = false;
+      mutations.forEach(function(mutation){
+        if(mutation.type === 'childList' && mutation.addedNodes.length > 0){
+          shouldPatch = true;
+        }
+      });
+      if(shouldPatch) applySafeArea();
+    }).observe(document.documentElement, {childList:true, subtree:true});
   }
 })();
 </script>"#;
