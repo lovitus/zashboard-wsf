@@ -817,81 +817,28 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
 
   // Read insets from server-injected global var, or use sensible defaults
   var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, right:0, bottom:34, left:0};
-  if(!insets.top && !insets.bottom) return;
 
-  // Force safe area padding using !important - most aggressive approach
-  function applySafeArea(){
-    var html = document.documentElement;
-    var body = document.body;
-    
-    // Set CSS variables for any code that reads them
-    html.style.setProperty('--safe-area-inset-top', insets.top + 'px', 'important');
-    html.style.setProperty('--safe-area-inset-bottom', insets.bottom + 'px', 'important');
-    html.style.setProperty('--safe-area-inset-left', insets.left + 'px', 'important');
-    html.style.setProperty('--safe-area-inset-right', insets.right + 'px', 'important');
-    
-    // Also use wsf-prefixed versions
-    html.style.setProperty('--wsf-sai-top', insets.top + 'px', 'important');
-    html.style.setProperty('--wsf-sai-bottom', insets.bottom + 'px', 'important');
-    html.style.setProperty('--wsf-sai-left', insets.left + 'px', 'important');
-    html.style.setProperty('--wsf-sai-right', insets.right + 'px', 'important');
-    
-    // Force margin-top on html as backup (some frameworks use margin)
-    html.style.setProperty('margin-top', insets.top + 'px', 'important');
-    
-    // Force padding on body
-    if(body){
-      // Always force padding-top to be at least safe area
-      body.style.setProperty('padding-top', insets.top + 'px', 'important');
-      body.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
-    }
-    
-    // Aggressively target all possible container elements
-    var selectors = ['#app', '#root', 'main', '.app', '.main', '[class*="app"]', '[class*="App"]', '[class*="layout"]', '[class*="Layout"]', 'div[class*="container"]', 'div[class*="Container"]'];
-    selectors.forEach(function(sel){
-      var els = document.querySelectorAll(sel);
-      els.forEach(function(el){
-        if(el && el !== body){
-          el.style.setProperty('padding-top', insets.top + 'px', 'important');
-          el.style.setProperty('padding-bottom', insets.bottom + 'px', 'important');
-        }
-      });
-    });
-    
-    // Directly patch any element using env() in its style attribute
+  // Only patch elements that explicitly use env() in inline styles
+  // CSS files are already processed server-side to replace env() with actual values
+  function patchInlineEnv(){
     document.querySelectorAll('[style*="safe-area"]').forEach(function(el){
       var s = el.getAttribute('style') || '';
-      s = s.replace(/env\(\s*safe-area-inset-top\s*(,[^)]+)?\)/g, insets.top + 'px');
-      s = s.replace(/env\(\s*safe-area-inset-bottom\s*(,[^)]+)?\)/g, insets.bottom + 'px');
-      s = s.replace(/env\(\s*safe-area-inset-left\s*(,[^)]+)?\)/g, insets.left + 'px');
-      s = s.replace(/env\(\s*safe-area-inset-right\s*(,[^)]+)?\)/g, insets.right + 'px');
+      if(s.indexOf('env(') === -1) return;
+      s = s.replace(/env\(\s*safe-area-inset-top\s*(,[^)]+)?\)/gi, insets.top + 'px');
+      s = s.replace(/env\(\s*safe-area-inset-bottom\s*(,[^)]+)?\)/gi, insets.bottom + 'px');
+      s = s.replace(/env\(\s*safe-area-inset-left\s*(,[^)]+)?\)/gi, insets.left + 'px');
+      s = s.replace(/env\(\s*safe-area-inset-right\s*(,[^)]+)?\)/gi, insets.right + 'px');
       el.setAttribute('style', s);
     });
   }
 
-  // Apply immediately and repeatedly
-  applySafeArea();
-  setTimeout(applySafeArea, 50);
-  setTimeout(applySafeArea, 200);
-  setTimeout(applySafeArea, 500);
-  setTimeout(applySafeArea, 1000);
-  setTimeout(applySafeArea, 2000);
+  // Patch immediately and on DOM changes
+  patchInlineEnv();
+  setTimeout(patchInlineEnv, 100);
+  setTimeout(patchInlineEnv, 500);
   
-  // Re-apply when DOM changes
   if(window.MutationObserver){
-    new MutationObserver(function(mutations){
-      var shouldPatch = false;
-      mutations.forEach(function(mutation){
-        if(mutation.type === 'childList'){
-          mutation.addedNodes.forEach(function(node){
-            if(node.nodeType === 1 && (node.tagName === 'DIV' || node.tagName === 'MAIN' || node.tagName === 'SECTION')){
-              shouldPatch = true;
-            }
-          });
-        }
-      });
-      if(shouldPatch) applySafeArea();
-    }).observe(document.documentElement, {childList:true, subtree:true});
+    new MutationObserver(patchInlineEnv).observe(document.documentElement, {childList:true, subtree:true});
   }
 })();
 </script>"#;
