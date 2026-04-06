@@ -205,7 +205,6 @@ const form = reactive({
 
 const showEditModal = ref(false)
 const editingBackendUuid = ref<string>('')
-const submitting = ref(false)
 const isTauriApp = isTauri
 
 // 监听路由参数，自动打开编辑模态框
@@ -215,9 +214,8 @@ watch(
     if (backendUuid && typeof backendUuid === 'string') {
       editingBackendUuid.value = backendUuid
       showEditModal.value = true
-      const query = { ...router.currentRoute.value.query }
-      delete query.editBackend
-      router.replace({ query })
+      // 清除路由参数以避免重复触发
+      router.replace({ query: {} })
     }
   },
   { immediate: true },
@@ -237,17 +235,10 @@ const editBackend = (backend: Backend) => {
 }
 
 const handleSubmit = async (form: Omit<Backend, 'uuid'>, quiet = false) => {
-  if (submitting.value) return
-
   const { protocol, host, port, password } = form
 
   if (!protocol || !host || !port) {
-    if (!quiet) alert('Please fill in all the fields.')
-    return
-  }
-
-  if (!/^\d+$/.test(port.trim()) || Number(port) < 1 || Number(port) > 65535) {
-    if (!quiet) alert('Port must be a number between 1 and 65535.')
+    alert('Please fill in all the fields.')
     return
   }
 
@@ -262,8 +253,6 @@ const handleSubmit = async (form: Omit<Backend, 'uuid'>, quiet = false) => {
     })
   }
 
-  submitting.value = true
-
   try {
     const data = await fetch(`${getUrlFromBackend(form)}/version`, {
       method: 'GET',
@@ -274,7 +263,7 @@ const handleSubmit = async (form: Omit<Backend, 'uuid'>, quiet = false) => {
 
     if (data.status !== 200) {
       if (!quiet) {
-        alert(data.statusText || `HTTP ${data.status}`)
+        alert(data.statusText)
       }
       return
     }
@@ -283,7 +272,7 @@ const handleSubmit = async (form: Omit<Backend, 'uuid'>, quiet = false) => {
 
     if (!version) {
       if (!quiet) {
-        alert(message || 'Backend did not return a version.')
+        alert(message)
       }
       return
     }
@@ -293,12 +282,10 @@ const handleSubmit = async (form: Omit<Backend, 'uuid'>, quiet = false) => {
     if (!redirected) {
       router.push({ name: ROUTE_NAME.proxies })
     }
-  } catch (error) {
+  } catch (e) {
     if (!quiet) {
-      alert(error instanceof Error ? error.message : 'Unable to reach the backend.')
+      alert(e)
     }
-  } finally {
-    submitting.value = false
   }
 }
 
