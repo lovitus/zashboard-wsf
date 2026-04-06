@@ -737,21 +737,34 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         btnFs.onmouseleave=function(){btnFs.style.background='rgba(255,255,255,.78)';};
         
         var isPadded = false;
+        var oldStyles = '';
         btnFs.onclick=function(ev){
           try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
           var container = document.querySelector('#app') || document.querySelector('#root') || document.body;
           var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, bottom:34};
           
           if (!isPadded) {
-              container.style.setProperty('padding-top', (insets.top||47) + 'px', 'important');
-              container.style.setProperty('padding-bottom', (insets.bottom||34) + 'px', 'important');
+              oldStyles = container.getAttribute('style') || '';
+              // Use fixed positioning to force a 'safe window'
+              var top = (insets.top || 47) + 'px';
+              var bottom = (insets.bottom || 34) + 'px';
+              container.style.setProperty('position', 'fixed', 'important');
+              container.style.setProperty('top', top, 'important');
+              container.style.setProperty('bottom', bottom, 'important');
+              container.style.setProperty('left', '0', 'important');
+              container.style.setProperty('right', '0', 'important');
+              container.style.setProperty('height', 'auto', 'important');
+              container.style.setProperty('margin', '0', 'important');
               container.style.setProperty('box-sizing', 'border-box', 'important');
-              container.style.setProperty('min-height', '100vh', 'important');
+              
+              // Ensure body background covers the 'dead zone' if needed
+              document.body.style.backgroundColor = window.getComputedStyle(container).backgroundColor;
+              
               btnFs.textContent = '\u21A5 Reset Layout';
               isPadded = true;
           } else {
-              container.style.removeProperty('padding-top');
-              container.style.removeProperty('padding-bottom');
+              if (oldStyles) container.setAttribute('style', oldStyles);
+              else container.removeAttribute('style');
               btnFs.textContent = '\u2195 Pad Layout';
               isPadded = false;
           }
