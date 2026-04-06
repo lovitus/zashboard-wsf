@@ -737,66 +737,18 @@ const RETURN_BUTTON_SCRIPT: &str = r#"<script>
         btnFs.onmouseleave=function(){btnFs.style.background='rgba(255,255,255,.78)';};
         
         var isPadded = false;
-        var oldStyles = []; // [element, style]
         btnFs.onclick=function(ev){
           try{if(ev){ev.preventDefault();ev.stopPropagation();}}catch(_){}
-          var container = document.querySelector('#app') || document.querySelector('#root') || document.querySelector('#app-content') || document.querySelector('main') || document.body;
-          var insets = window.__WSF_SAFE_AREA_INSETS__ || {top:47, bottom:34};
-          var scriptId = '__wsf_safe_style';
-          
+          var root = document.documentElement;
           if (!isPadded) {
-              oldStyles = [
-                {el: container, style: container.getAttribute('style')},
-                {el: document.documentElement, style: document.documentElement.getAttribute('style')},
-                {el: document.body, style: document.body.getAttribute('style')}
-              ];
-              
-              var top = (insets.top || 47) + 'px';
-              var bottom = (insets.bottom || 34) + 'px';
-              var bg = window.getComputedStyle(container).backgroundColor;
-              if (!bg || bg==='transparent' || bg==='rgba(0, 0, 0, 0)') bg = window.getComputedStyle(document.body).backgroundColor;
-
-              // [INVASIVE] Brute-force override all full-height classes to respect the parent boundaries
-              var style = document.createElement('style');
-              style.id = scriptId;
-              style.textContent = `
-                #app, #app-content, .h-dvh, .h-screen, .h-full, [style*="height: 100vh"], [style*="height: 100dvh"], [style*="height: 100%"] {
-                  height: 100% !important;
-                  max-height: 100% !important;
-                  min-height: 100% !important;
-                }
-                html, body { overflow: hidden !important; height: 100% !important; margin:0 !important; padding:0 !important; }
-              `;
-              document.head.appendChild(style);
-
-              // Force fixed boundaries on root container
-              container.style.setProperty('position', 'fixed', 'important');
-              container.style.setProperty('top', top, 'important');
-              container.style.setProperty('bottom', bottom, 'important');
-              container.style.setProperty('left', '0', 'important');
-              container.style.setProperty('right', '0', 'important');
-              container.style.setProperty('height', 'auto', 'important');
-              container.style.setProperty('width', '100vw', 'important');
-              container.style.setProperty('margin', '0', 'important');
-              container.style.setProperty('overflow', 'auto', 'important');
-              container.style.setProperty('box-sizing', 'border-box', 'important');
-              container.style.setProperty('z-index', '1', 'important');
-
-              document.body.style.setProperty('background-color', bg, 'important');
-              
+              root.classList.add('wsf-safe-mode');
               btnFs.textContent = '\u21A5 Reset Layout';
               isPadded = true;
           } else {
-              var s = document.getElementById(scriptId);
-              if(s) s.remove();
-              oldStyles.forEach(function(item){
-                if(item.style) item.el.setAttribute('style', item.style);
-                else item.el.removeAttribute('style');
-              });
+              root.classList.remove('wsf-safe-mode');
               btnFs.textContent = '\u2195 Pad Layout';
               isPadded = false;
           }
-
           setFabOpen(false);
           return false;
         };
@@ -1417,8 +1369,11 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>, safe_area_insets
     // Inject scripts right after <head> so they run before SPA bundles.
     let mut head_scripts = String::new();
 
-    // Inject safe area insets as a global JS variable for upstream UI patches.
-    // Format: "top,right,bottom,left" in px (e.g. "47,0,34,0").
+    // 1. Initial CSS Variable definitions and the "Safe Mode" override block.
+    // This handles the '100dvh' and '100vh' replacements we do in patch_css_env.
+    head_scripts.push_str("<style>:root{--wsf-sai-top:0px;--wsf-sai-bottom:0px;--wsf-sai-left:0px;--wsf-sai-right:0px;}.wsf-safe-mode{--safe-area-inset-top:var(--wsf-sai-top);--safe-area-inset-bottom:var(--wsf-sai-bottom);--safe-area-inset-left:var(--wsf-sai-left);--safe-area-inset-right:var(--wsf-sai-right);--wsf-h-dvh:calc(100dvh - var(--wsf-sai-top) - var(--wsf-sai-bottom));--wsf-h-vh:calc(100vh - var(--wsf-sai-top) - var(--wsf-sai-bottom));padding-top:var(--wsf-sai-top) !important;padding-bottom:var(--wsf-sai-bottom) !important;box-sizing:border-box !important;height:100% !important;overflow:hidden !important;}.wsf-safe-mode body{height:100% !important;overflow:auto !important;}</style>");
+
+    // 2. Local Safe Area detection/overrides.
     if let Some(insets) = safe_area_insets {
         let parts: Vec<&str> = insets.split(',').collect();
         if parts.len() == 4 {
@@ -1427,8 +1382,15 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>, safe_area_insets
             let bottom = parts[2].trim();
             let left = parts[3].trim();
             head_scripts.push_str(&format!(
-                "<script>window.__WSF_SAFE_AREA_INSETS__={{{{top:{},right:{},bottom:{},left:{}}}}};</script>",
-                top, right, bottom, left
+                "<script>(function(){{
+                    var r=document.documentElement;
+                    r.style.setProperty('--wsf-sai-top','{}px');
+                    r.style.setProperty('--wsf-sai-right','{}px');
+                    r.style.setProperty('--wsf-sai-bottom','{}px');
+                    r.style.setProperty('--wsf-sai-left','{}px');
+                    window.__WSF_SAFE_AREA_INSETS__={{top:{},right:{},bottom:{},left:{}}};
+                }})();</script>",
+                top, right, bottom, left, top, right, bottom, left
             ));
         }
     }
@@ -1449,7 +1411,7 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>, safe_area_insets
     } else if let Some(pos) = result.find("<HEAD>") {
         result.insert_str(pos + 6, &head_scripts);
     } else {
-        result = format!("{}{}", head_scripts, result);
+        result.insert_str(0, &head_scripts);
     }
 
     // Inject return button before </body>.
@@ -1477,16 +1439,27 @@ fn sync_state_with_disk(s: &mut UiManagerState) {
 
 fn patch_css_env(css: &str, top: u32, bottom: u32) -> String {
     let mut result = css.to_string();
-    result = result.replace("env(safe-area-inset-top)", &format!("{}px", top));
-    result = result.replace("env(safe-area-inset-top, 0px)", &format!("{}px", top));
-    result = result.replace("env( safe-area-inset-top )", &format!("{}px", top));
-    result = result.replace("env(safe-area-inset-bottom)", &format!("{}px", bottom));
-    result = result.replace("env(safe-area-inset-bottom, 0px)", &format!("{}px", bottom));
-    result = result.replace("env( safe-area-inset-bottom )", &format!("{}px", bottom));
-    result = result.replace("env(safe-area-inset-left)", "0px");
-    result = result.replace("env(safe-area-inset-left, 0px)", "0px");
-    result = result.replace("env(safe-area-inset-right)", "0px");
-    result = result.replace("env(safe-area-inset-right, 0px)", "0px");
+    result = result.replace("env(safe-area-inset-top)", "var(--wsf-sai-top, 0px)");
+    result = result.replace("env(safe-area-inset-top, 0px)", "var(--wsf-sai-top, 0px)");
+    result = result.replace("env( safe-area-inset-top )", "var(--wsf-sai-top, 0px)");
+    result = result.replace("env(safe-area-inset-bottom)", "var(--wsf-sai-bottom, 0px)");
+    result = result.replace("env(safe-area-inset-bottom, 0px)", "var(--wsf-sai-bottom, 0px)");
+    result = result.replace("env( safe-area-inset-bottom )", "var(--wsf-sai-bottom, 0px)");
+    result = result.replace("env(safe-area-inset-left)", "var(--wsf-sai-left, 0px)");
+    result = result.replace("env(safe-area-inset-left, 0px)", "var(--wsf-sai-left, 0px)");
+    result = result.replace("env(safe-area-inset-right)", "var(--wsf-sai-right, 0px)");
+    result = result.replace("env(safe-area-inset-right, 0px)", "var(--wsf-sai-right, 0px)");
+
+    // [DANGEROUS BUT EFFECTIVE] Replace viewport-height units to respect our calculated safe-zone.
+    // Instead of replacing '100dvh' with a static pixel, we replace it with a calc that only gets triggered 
+    // when 'wsf-safe-mode' class is added to the HTML/Root element.
+    // We achieve this by using the CSS variable fallback mechanism.
+    
+    // Pattern: replace '100dvh' with 'var(--wsf-h-dvh, 100dvh)'
+    // Then we define --wsf-h-dvh in our injected <style> block.
+    result = result.replace("100dvh", "var(--wsf-h-dvh, 100dvh)");
+    result = result.replace("100vh", "var(--wsf-h-vh, 100vh)");
+    
     result
 }
 
