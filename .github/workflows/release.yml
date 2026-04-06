@@ -294,33 +294,37 @@ jobs:
           sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          # Find the APK for this specific ABI
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*${{ matrix.abi }}*" -name "*.apk" | head -1)
-          if [ -z "$APK" ]; then
-            echo "APK not found for ${{ matrix.abi }}"
-            find src-tauri/gen/android/app/build/outputs/apk -name "*.apk"
+          # When using --target, APK is in release directory, not ABI subdirectory
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release"
+          echo "=== APK files in $APK_DIR ==="
+          find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || echo "No APKs found in $APK_DIR"
+
+          # Find any APK (should be the only one for this target)
+          UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
+          if [ -z "$UNSIGNED" ]; then
+            echo "ERROR: No APK found for target ${{ matrix.rust-target }}"
+            find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null || true
             exit 1
           fi
 
-          echo "Found APK: $APK"
+          echo "Found APK: $UNSIGNED"
 
           # Zipalign and sign
-          "$BT/zipalign" -f 4 "$APK" "${APK}.aligned"
-          mv "${APK}.aligned" "$APK"
+          "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
+          mv "${UNSIGNED}.aligned" "$UNSIGNED"
 
           "$BT/apksigner" sign \
             --ks "src-tauri/open-release.keystore" \
             --ks-pass pass:"zashboard-open-2026" \
             --ks-key-alias "zashboard" \
             --key-pass pass:"zashboard-open-2026" \
-            "$APK"
+            "$UNSIGNED"
 
-          "$BT/apksigner" verify --verbose "$APK"
+          "$BT/apksigner" verify --verbose "$UNSIGNED"
 
-          # Rename
-          DIR=$(dirname "$APK")
-          mv "$APK" "${DIR}/zashboard-${{ matrix.abi }}-release.apk"
-          echo "Signed: ${DIR}/zashboard-${{ matrix.abi }}-release.apk"
+          # Rename to include ABI name
+          mv "$UNSIGNED" "${APK_DIR}/zashboard-${{ matrix.abi }}-release.apk"
+          echo "Signed: ${APK_DIR}/zashboard-${{ matrix.abi }}-release.apk"
 
       - name: Upload APK
         uses: softprops/action-gh-release@v2
