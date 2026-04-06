@@ -835,73 +835,10 @@ const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
   if(meta && meta.content.indexOf('viewport-fit=cover') === -1) {
       meta.content += ', viewport-fit=cover';
   }
-
-  var style = document.createElement('style');
-  style.id = 'wsf-safe-area-style';
-  style.innerHTML = `
-    /* Safely pad main SPA containers, but only once. */
-    body > #app, body > #root {
-      padding-top: ${insets.top}px !important;
-      padding-bottom: ${insets.bottom}px !important;
-      box-sizing: border-box !important;
-    }
-    
-    /* Fallback if SPA mounts directly to body and has no known containers */
-    body:not(:has(#app)):not(:has(#root)) {
-      padding-top: ${insets.top}px !important;
-      padding-bottom: ${insets.bottom}px !important;
-    }
-  `;
-  document.head.appendChild(style);
-
-  function applySafeArea(){
-    var headers = document.querySelectorAll('[class*="header" i], [class*="app-bar" i], [class*="navbar" i]');
-    for(var i=0; i<headers.length; i++) {
-        var el = headers[i];
-        if (el.dataset.wsfPatched) continue;
-        var cs = getComputedStyle(el);
-        if (cs.position === 'fixed' || cs.position === 'sticky') {
-            var currTop = parseFloat(cs.top) || 0;
-            if (currTop < insets.top && cs.bottom !== '0px') {
-                el.style.setProperty('top', insets.top + 'px', 'important');
-                el.dataset.wsfPatched = "1";
-            }
-        }
-    }
-    
-    var footers = document.querySelectorAll('[class*="tab-bar" i], [class*="bottom-nav" i], [class*="footer" i]');
-    for(var j=0; j<footers.length; j++) {
-        var el = footers[j];
-        if (el.dataset.wsfPatched) continue;
-        var cs = getComputedStyle(el);
-        if (cs.position === 'fixed' || cs.position === 'sticky') {
-            var currBot = parseFloat(cs.bottom) || 0;
-            if (currBot < insets.bottom && cs.top !== '0px') {
-                el.style.setProperty('bottom', insets.bottom + 'px', 'important');
-                el.dataset.wsfPatched = "1";
-            }
-        }
-    }
-  }
-
-  applySafeArea();
-  setTimeout(applySafeArea, 100);
-  setTimeout(applySafeArea, 500);
-  setTimeout(applySafeArea, 1500);
   
-  if(window.MutationObserver){
-    var observer = new MutationObserver(function(mutations){
-      var shouldApply = false;
-      for(var i=0; i<mutations.length; i++) {
-        if(mutations[i].addedNodes.length > 0) {
-          shouldApply = true;
-          break;
-        }
-      }
-      if(shouldApply) applySafeArea();
-    });
-    observer.observe(document.body, {childList: true, subtree: true});
-  }
+  // Note: We deliberately do NOT inject structural padding (like #app { padding-top }) here.
+  // The server-side code (patch_css_env) already intercepts CSS files and replaces `env(safe-area-inset-*)`
+  // with actual pixels. Adding JS structural padding on top of that causes a doubling layout bug!
 })();
 </script>"#;
 
@@ -1496,7 +1433,7 @@ fn send_http_response(
         _ => "Error",
     };
     let header = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store, no-cache, must-revalidate, max-age=0\r\nConnection: close\r\n\r\n",
         status, status_text, content_type, body.len()
     );
     stream
