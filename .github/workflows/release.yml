@@ -284,8 +284,8 @@ jobs:
 
       - name: Build Android APK
         run: |
-          # Use Tauri's short target values, not Rust target triples
-          pnpm tauri android build --apk --target ${{ matrix.abi == 'arm64-v8a' && 'aarch64' || 'armv7' }}
+          # Use --split-per-abi to generate ABI-specific APKs
+          pnpm tauri android build --apk --split-per-abi
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
@@ -294,15 +294,22 @@ jobs:
           sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          # When using --target, APK is in release directory, not ABI subdirectory
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release"
-          echo "=== APK files in $APK_DIR ==="
+          # When using --split-per-abi, APKs are in ABI subdirectories
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${{ matrix.abi }}/release"
+          if [ ! -d "$APK_DIR" ]; then
+            APK_DIR="src-tauri/gen/android/app/build/outputs/apk/release/${{ matrix.abi }}"
+          fi
+          
+          echo "=== APK files for ${{ matrix.abi }} ==="
+          echo "Checking: $APK_DIR"
           find "$APK_DIR" -name "*.apk" -type f 2>/dev/null || echo "No APKs found in $APK_DIR"
 
-          # Find any APK (should be the only one for this target)
+          # Find the APK for this specific ABI
           UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
           if [ -z "$UNSIGNED" ]; then
-            echo "ERROR: No APK found for target ${{ matrix.rust-target }}"
+            echo "ERROR: No APK found for ${{ matrix.abi }}"
+            echo "=== Checking fallback path: src-tauri/gen/android/app/build/outputs/apk/release/${{ matrix.abi }} ==="
+            find "src-tauri/gen/android/app/build/outputs/apk/release/${{ matrix.abi }}" -name "*.apk" -type f 2>/dev/null || echo "No such directory"
             find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null || true
             exit 1
           fi
@@ -323,8 +330,9 @@ jobs:
           "$BT/apksigner" verify --verbose "$UNSIGNED"
 
           # Rename to include ABI name
-          mv "$UNSIGNED" "${APK_DIR}/zashboard-${{ matrix.abi }}-release.apk"
-          echo "Signed: ${APK_DIR}/zashboard-${{ matrix.abi }}-release.apk"
+          DIR=$(dirname "$UNSIGNED")
+          mv "$UNSIGNED" "${DIR}/zashboard-${{ matrix.abi }}-release.apk"
+          echo "Signed: ${DIR}/zashboard-${{ matrix.abi }}-release.apk"
 
       - name: Upload APK
         uses: softprops/action-gh-release@v2
