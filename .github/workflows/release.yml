@@ -283,7 +283,9 @@ jobs:
           EOF
 
       - name: Build Android APK
-        run: pnpm tauri android build --apk --split-per-abi
+        run: |
+          # Use Rust target triple for specific ABI compilation
+          pnpm tauri android build --apk --target ${{ matrix.rust-target }}
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
