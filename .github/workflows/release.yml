@@ -16,6 +16,7 @@ jobs:
   build-tauri:
     permissions:
       contents: write
+      discussions: write
     strategy:
       fail-fast: false
       # ------------------------------------------------------------------
