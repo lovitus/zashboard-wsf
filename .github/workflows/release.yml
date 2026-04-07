@@ -324,6 +324,26 @@ jobs:
           echo "=== network_security_config.xml ==="
           cat "$RES_XML/network_security_config.xml"
 
+      - name: Configure ABI split builds
+        run: |
+          GRADLE_FILE="src-tauri/gen/android/app/build.gradle.kts"
+
+          # 在文件末尾添加 splits 配置
+          cat >> "$GRADLE_FILE" << 'GRADLE_EOF'
+
+          android.splits {
+              abi {
+                  isEnable = true
+                  reset()
+                  include("arm64-v8a", "armeabi-v7a", "x86_64")
+                  isUniversalApk = false
+              }
+          }
+          GRADLE_EOF
+
+          echo "=== Added ABI splits configuration ==="
+          tail -20 "$GRADLE_FILE"
+
       - name: Build Android APK
         run: pnpm tauri android build --apk
         env:
