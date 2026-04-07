@@ -25,6 +25,13 @@
             >
               <button
                 class="fab-menu-item item-builtin"
+                @click.stop="handlePadLayout"
+              >
+                <AdjustmentsHorizontalIcon class="h-4 w-4" />
+                <span>{{ isPadded ? 'Reset Layout' : 'Pad Layout' }}</span>
+              </button>
+              <button
+                class="fab-menu-item item-builtin"
                 v-if="hasActiveUpstream"
                 @click.stop="handleSwitchBuiltin"
               >
@@ -156,8 +163,19 @@ const FAB_SIZE = 48
 
 const fabMenuOpen = ref(false)
 const hasActiveUpstream = ref(false)
-
 const fabPos = ref({ x: -1, y: -1 }) // -1 means unset → default placement
+const isPadded = ref(false)
+
+const handlePadLayout = () => {
+  fabMenuOpen.value = false
+  const root = document.documentElement
+  isPadded.value = !isPadded.value
+  if (isPadded.value) {
+    root.classList.add('wsf-safe-mode')
+  } else {
+    root.classList.remove('wsf-safe-mode')
+  }
+}
 
 const fabStyle = computed(() => {
   if (fabPos.value.x < 0) {

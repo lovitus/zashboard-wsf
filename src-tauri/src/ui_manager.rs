@@ -1164,8 +1164,10 @@ fn handle_http_request(
         let content =
             std::fs::read(&file_path).map_err(|e| format!("File read error: {}", e))?;
         let mime = mime_type(&clean_path);
-        if mime.starts_with("text/css") && (sai_top > 0 || sai_bottom > 0) {
-            // Replace env() with actual pixel values in CSS
+        if mime.starts_with("text/css") {
+            // Always replace env() and full-height units with CSS variable handles.
+            // This allows the UI to respond to safe-area changes dynamically even if
+            // the initial insets were zero.
             let css_str = String::from_utf8_lossy(&content);
             let patched = patch_css_env(&css_str, sai_top, sai_bottom);
             (patched.into_bytes(), mime)
@@ -1371,7 +1373,8 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>, safe_area_insets
 
     // 1. Initial CSS Variable definitions and the "Safe Mode" override block.
     // This handles the '100dvh' and '100vh' replacements we do in patch_css_env.
-    head_scripts.push_str("<style>:root{--wsf-sai-top:0px;--wsf-sai-bottom:0px;--wsf-sai-left:0px;--wsf-sai-right:0px;}.wsf-safe-mode{--safe-area-inset-top:var(--wsf-sai-top);--safe-area-inset-bottom:var(--wsf-sai-bottom);--safe-area-inset-left:var(--wsf-sai-left);--safe-area-inset-right:var(--wsf-sai-right);--wsf-h-dvh:calc(100dvh - var(--wsf-sai-top) - var(--wsf-sai-bottom));--wsf-h-vh:calc(100vh - var(--wsf-sai-top) - var(--wsf-sai-bottom));padding-top:var(--wsf-sai-top) !important;padding-bottom:var(--wsf-sai-bottom) !important;box-sizing:border-box !important;height:100% !important;overflow:hidden !important;}.wsf-safe-mode body{height:100% !important;overflow:auto !important;}</style>");
+    // We target common Zashboard selectors like #app-content and .h-dvh/h-screen.
+    head_scripts.push_str("<style>:root{--wsf-sai-top:0px;--wsf-sai-bottom:0px;--wsf-sai-left:0px;--wsf-sai-right:0px;}.wsf-safe-mode{--safe-area-inset-top:var(--wsf-sai-top);--safe-area-inset-bottom:var(--wsf-sai-bottom);--safe-area-inset-left:var(--wsf-sai-left);--safe-area-inset-right:var(--wsf-sai-right);--wsf-h-dvh:calc(100dvh - var(--wsf-sai-top) - var(--wsf-sai-bottom));--wsf-h-vh:calc(100vh - var(--wsf-sai-top) - var(--wsf-sai-bottom));padding-top:var(--wsf-sai-top) !important;padding-bottom:var(--wsf-sai-bottom) !important;box-sizing:border-box !important;height:100% !important;overflow:hidden !important;min-height:0px !important;}.wsf-safe-mode body{height:100% !important;overflow:auto !important;box-sizing:border-box !important;}.wsf-safe-mode #app-content, .wsf-safe-mode .h-dvh, .wsf-safe-mode .h-screen{height:var(--wsf-h-dvh, 100dvh) !important;max-height:100% !important;min-height:0px !important;}</style>");
 
     // 2. Local Safe Area detection/overrides.
     if let Some(insets) = safe_area_insets {
@@ -1405,6 +1408,10 @@ fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>, safe_area_insets
         );
         head_scripts.push_str(&storage_script);
     }
+
+    // Perform height replacement on HTML content as well (to handle inline styles or utility classes)
+    result = result.replace("100dvh", "var(--wsf-h-dvh, 100dvh)");
+    result = result.replace("100vh", "var(--wsf-h-vh, 100vh)");
 
     if let Some(pos) = result.find("<head>") {
         result.insert_str(pos + 6, &head_scripts);
