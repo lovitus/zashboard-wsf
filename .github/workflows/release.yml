@@ -187,6 +187,12 @@ jobs:
       - name: Setup NDK
         run: sdkmanager "ndk;27.0.12077973"
 
+      - name: NDK cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/ndk/27.0.12077973
+          key: ndk-27.0.12077973-${{ runner.os }}
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -195,10 +201,35 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
+      - name: pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-${{ runner.os }}-
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: android-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            src-tauri/gen/android/.gradle
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -210,15 +241,14 @@ jobs:
         run: |
           JNILIBS="src-tauri/gen/android/app/src/main/jniLibs"
 
-          # ABI → Go release asset suffix
+          # ABI → Go release asset suffix (主流 ABI: arm64, armv7, x86_64)
           declare -A ABI_MAP=(
             ["arm64-v8a"]="linux-arm64"
             ["armeabi-v7a"]="linux-armv7"
-            ["x86"]="linux-386"
             ["x86_64"]="linux-amd64"
           )
 
-          for ABI in arm64-v8a armeabi-v7a x86 x86_64; do
+          for ABI in arm64-v8a armeabi-v7a x86_64; do
             mkdir -p "$JNILIBS/$ABI"
             SUFFIX="${ABI_MAP[$ABI]}"
 
@@ -300,12 +330,54 @@ jobs:
           echo "=== network_security_config.xml ==="
           cat "$RES_XML/network_security_config.xml"
 
-      - name: Build Android APK
+      - name: Configure ABI split builds
+        run: |
+          GRADLE_FILE="src-tauri/gen/android/app/build.gradle.kts"
+
+          # 在 android {} 块中添加 splits 配置
+          python3 << 'PYEOF'
+          import re
+
+          gradle_path = "src-tauri/gen/android/app/build.gradle.kts"
+          with open(gradle_path, "r") as f:
+              content = f.read()
+
+          # 查找 android { 块，在其中添加 splits 配置
+          splits_config = '''
+              splits {
+                  abi {
+                      isEnable = true
+                      reset()
+                      include("arm64-v8a", "armeabi-v7a", "x86_64")
+                      isUniversalApk = false
+                  }
+              }
+          '''
+
+          # 在 android { 之后插入 splits 配置（如果不存在）
+          if "splits {" not in content:
+              content = re.sub(
+                  r'(android\s*\{)',
+                  r'\1' + splits_config,
+                  content,
+                  count=1
+              )
+
+          with open(gradle_path, "w") as f:
+              f.write(content)
+
+          print("ABI splits configured in build.gradle.kts")
+          PYEOF
+
+          echo "=== build.gradle.kts (splits section) ==="
+          grep -A 10 "splits {" "$GRADLE_FILE" || echo "Splits config added"
+
+      - name: Build Android APK (ABI splits)
         run: pnpm tauri android build --apk
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
-      - name: Sign APK
+      - name: Sign APK (ABI splits)
         run: |
           set -euo pipefail
           KS_FILE="src-tauri/open-release.keystore"
@@ -321,36 +393,58 @@ jobs:
           sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
-          UNSIGNED=$(find "$APK_DIR" -name "*.apk" | head -1)
-          echo "Found APK: $UNSIGNED"
+          # 处理每个 ABI 的 APK
+          APK_BASE_DIR="src-tauri/gen/android/app/build/outputs/apk"
+          SIGNED_DIR="$APK_BASE_DIR/signed"
+          mkdir -p "$SIGNED_DIR"
 
-          # Zipalign
-          "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
-          mv "${UNSIGNED}.aligned" "$UNSIGNED"
+          for ABI in arm64-v8a armeabi-v7a x86_64; do
+            APK_DIR="$APK_BASE_DIR/$ABI/release"
+            
+            if [ ! -d "$APK_DIR" ]; then
+              echo "WARNING: $APK_DIR not found, skipping $ABI"
+              continue
+            fi
 
-          # Sign with apksigner
-          "$BT/apksigner" sign \
-            --ks "$KS_FILE" \
-            --ks-pass pass:"$KEY_PASS" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass pass:"$KEY_PASS" \
-            "$UNSIGNED"
+            UNSIGNED=$(find "$APK_DIR" -name "*.apk" | head -1)
+            
+            if [ -z "$UNSIGNED" ]; then
+              echo "WARNING: No APK found in $APK_DIR, skipping $ABI"
+              continue
+            fi
 
-          # Verify
-          "$BT/apksigner" verify --verbose "$UNSIGNED"
+            echo "Processing $ABI APK: $UNSIGNED"
 
-          # Rename to indicate signed
-          SIGNED="${APK_DIR}/zashboard-universal-release.apk"
-          mv "$UNSIGNED" "$SIGNED"
-          echo "Signed APK: $SIGNED"
+            # Zipalign
+            "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
+            mv "${UNSIGNED}.aligned" "$UNSIGNED"
 
-      - name: Upload APK
+            # Sign with apksigner
+            "$BT/apksigner" sign \
+              --ks "$KS_FILE" \
+              --ks-pass pass:"$KEY_PASS" \
+              --ks-key-alias "$KEY_ALIAS" \
+              --key-pass pass:"$KEY_PASS" \
+              "$UNSIGNED"
+
+            # Verify
+            "$BT/apksigner" verify --verbose "$UNSIGNED"
+
+            # Rename to indicate ABI and signed
+            SIGNED="$SIGNED_DIR/zashboard-${ABI}-release.apk"
+            mv "$UNSIGNED" "$SIGNED"
+            echo "Signed APK: $SIGNED"
+          done
+
+          echo "=== All signed APKs ==="
+          ls -lh "$SIGNED_DIR"/*.apk
+
+      - name: Upload APK (ABI splits)
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           draft: false
           files: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/zashboard-universal-release.apk
+            src-tauri/gen/android/app/build/outputs/apk/signed/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
