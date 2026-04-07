@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - master
     tags:
       - 'v*'
   workflow_dispatch:
@@ -150,23 +152,37 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Zashboard v__VERSION__'
+          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          releaseName: '[${{ github.event.head_commit.timestamp }} EST] Zashboard v__VERSION__'
           releaseBody: |
-            Zashboard Native v__VERSION__
+            ## Zashboard v__VERSION__
 
-            Release assets for this tag are attached below.
+            ### Changes in this release
 
-            Documentation:
+            <!-- Add your changes here -->
+
+            ---
+
+            ### Release Info
+            - **Date**: ${{ github.event.head_commit.timestamp }}
+            - **Commit**: ${{ github.sha }}
+            - **Type**: ${{ contains(github.ref_name, '-') && 'Prerelease / test validation build' || 'Stable release' }}
+
+            ### Documentation
             - README: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md
-            - CHANGELOG: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md
-            - Maintenance: https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/readme/MAINTENANCE.md
+            - Issues: https://github.com/${{ github.repository }}/issues
 
-            Note:
-            - Native app release version and built-in upstream UI version are tracked separately in this repository.
+            ---
+
+            ### Downloads
+            Release assets for each platform are attached below.
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: ${{ matrix.args }}
+
+      - name: Save APK Artifact (Master Push only)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: echo "Cache seeded successfully on master."
 
   build-android:
     runs-on: ubuntu-22.04
@@ -181,11 +197,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK & build-tools
         uses: android-actions/setup-android@v3
 
-      - name: Setup NDK
-        run: sdkmanager "ndk;27.0.12077973"
+      - name: Setup NDK + build-tools
+        run: |
+          sdkmanager "ndk;27.0.12077973" "build-tools;34.0.0"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -195,10 +212,15 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Install Rust stable
+      - name: Install Rust stable (both targets)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -206,50 +228,40 @@ jobs:
       - name: Initialize Android project
         run: pnpm tauri android init
 
-      - name: Download sidecar binaries into jniLibs
+      - name: Download sidecar binaries (both ABIs in parallel)
         run: |
           JNILIBS="src-tauri/gen/android/app/src/main/jniLibs"
+          mkdir -p "$JNILIBS/arm64-v8a" "$JNILIBS/armeabi-v7a"
 
-          # ABI → Go release asset suffix
-          declare -A ABI_MAP=(
-            ["arm64-v8a"]="linux-arm64"
-            ["armeabi-v7a"]="linux-armv7"
-            ["x86"]="linux-386"
-            ["x86_64"]="linux-amd64"
-          )
-
-          for ABI in arm64-v8a armeabi-v7a x86 x86_64; do
-            mkdir -p "$JNILIBS/$ABI"
-            SUFFIX="${ABI_MAP[$ABI]}"
-
-            # gust
+          # Download all 4 binaries concurrently
+          download_and_place() {
+            local suffix="$1" abi="$2"
             gh release download "$GUST_TAG" --repo lovitus/gust \
-              -p "gost-${SUFFIX}-${GUST_VERSION}.gz" -D /tmp
-            gunzip -f "/tmp/gost-${SUFFIX}-${GUST_VERSION}.gz"
-            mv "/tmp/gost-${SUFFIX}-${GUST_VERSION}" "$JNILIBS/$ABI/libgust.so"
-            chmod +x "$JNILIBS/$ABI/libgust.so"
-
-            # slider
+              -p "gost-${suffix}-${GUST_VERSION}.gz" -D /tmp &
             gh release download "$SLIDER_TAG" --repo lovitus/slider \
-              -p "slider-${SUFFIX}-${SLIDER_VERSION}.gz" -D /tmp
-            gunzip -f "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}.gz"
-            mv "/tmp/slider-${SUFFIX}-${SLIDER_VERSION}" "$JNILIBS/$ABI/libslider.so"
-            chmod +x "$JNILIBS/$ABI/libslider.so"
-          done
+              -p "slider-${suffix}-${SLIDER_VERSION}.gz" -D /tmp &
+          }
+          download_and_place linux-arm64 arm64-v8a
+          download_and_place linux-armv7 armeabi-v7a
+          wait
 
-          echo "=== jniLibs ==="
-          find "$JNILIBS" -type f -exec ls -lh {} \;
+          # Decompress and place
+          for suffix_abi in "linux-arm64:arm64-v8a" "linux-armv7:armeabi-v7a"; do
+            suffix="${suffix_abi%%:*}"
+            abi="${suffix_abi##*:}"
+            gunzip -f "/tmp/gost-${suffix}-${GUST_VERSION}.gz"
+            mv "/tmp/gost-${suffix}-${GUST_VERSION}" "$JNILIBS/${abi}/libgust.so"
+            gunzip -f "/tmp/slider-${suffix}-${SLIDER_VERSION}.gz"
+            mv "/tmp/slider-${suffix}-${SLIDER_VERSION}" "$JNILIBS/${abi}/libslider.so"
+          done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure Android manifest (network, sidecar, keyboard)
+      - name: Configure Android manifest
         run: |
-          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
           RES_XML="src-tauri/gen/android/app/src/main/res/xml"
-
-          # Create network security config allowing cleartext for localhost and LAN
           mkdir -p "$RES_XML"
-          cat > "$RES_XML/network_security_config.xml" << 'NSEOF'
+          cat > "$RES_XML/network_security_config.xml" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <network-security-config>
             <base-config cleartextTrafficPermitted="true">
@@ -258,99 +270,71 @@ jobs:
               </trust-anchors>
             </base-config>
           </network-security-config>
-          NSEOF
+          EOF
 
-          # Use Python for robust XML manipulation (avoids sed mangling)
-          python3 << 'PYEOF'
-          import re, sys
-
+          python3 << 'EOF'
           manifest_path = "src-tauri/gen/android/app/src/main/AndroidManifest.xml"
           with open(manifest_path, "r") as f:
               content = f.read()
 
-          # Add ACCESS_NETWORK_STATE permission if missing
           if "ACCESS_NETWORK_STATE" not in content:
-              content = content.replace(
-                  "</manifest>",
-                  '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n</manifest>'
-              )
+              content = content.replace("</manifest>", '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n</manifest>')
 
-          # Add attributes to <application> tag (idempotent)
-          app_attrs = {
-              "android:extractNativeLibs": '"true"',
-              "android:usesCleartextTraffic": '"true"',
-              "android:networkSecurityConfig": '"@xml/network_security_config"',
-          }
-          for attr, val in app_attrs.items():
-              if attr not in content:
-                  content = content.replace("<application", f"<application {attr}={val}", 1)
-
-          # Add windowSoftInputMode to first <activity> (idempotent)
+          if "android:extractNativeLibs" not in content:
+              content = content.replace("<application", '<application android:extractNativeLibs="true"', 1)
+          if "android:usesCleartextTraffic" not in content:
+              content = content.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+          if "android:networkSecurityConfig" not in content:
+              content = content.replace("<application", '<application android:networkSecurityConfig="@xml/network_security_config"', 1)
           if "windowSoftInputMode" not in content:
               content = content.replace("<activity", '<activity android:windowSoftInputMode="adjustResize"', 1)
 
           with open(manifest_path, "w") as f:
               f.write(content)
+          EOF
 
-          print("AndroidManifest.xml patched successfully")
-          PYEOF
-
-          echo "=== AndroidManifest.xml ==="
-          cat "$MANIFEST"
-          echo "=== network_security_config.xml ==="
-          cat "$RES_XML/network_security_config.xml"
-
-      - name: Build Android APK
-        run: pnpm tauri android build --apk
+      - name: Build Android APKs (arm64-v8a + armeabi-v7a in one Gradle run)
+        run: pnpm tauri android build --apk --split-per-abi
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
 
-      - name: Sign APK
+      - name: Sign & rename APKs
         run: |
-          set -euo pipefail
-          KS_FILE="src-tauri/open-release.keystore"
-          KEY_ALIAS="zashboard"
-          KEY_PASS="zashboard-open-2026"
-
-          if [ ! -f "$KS_FILE" ]; then
-            echo "ERROR: missing keystore file: $KS_FILE"
-            exit 2
-          fi
-
-          # Install build-tools for apksigner & zipalign
-          sdkmanager "build-tools;34.0.0"
           BT="$ANDROID_HOME/build-tools/34.0.0"
 
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
-          UNSIGNED=$(find "$APK_DIR" -name "*.apk" | head -1)
-          echo "Found APK: $UNSIGNED"
+          sign_apk() {
+            local tauri_abi="$1" abi="$2"
+            local APK_DIR="src-tauri/gen/android/app/build/outputs/apk/${tauri_abi}/release"
+            local UNSIGNED
+            UNSIGNED=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
+            if [ -z "$UNSIGNED" ]; then
+              echo "ERROR: No APK found for ${abi} (tauri ABI: ${tauri_abi})"
+              find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" 2>/dev/null || true
+              exit 1
+            fi
+            "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
+            mv "${UNSIGNED}.aligned" "$UNSIGNED"
+            "$BT/apksigner" sign \
+              --ks "src-tauri/open-release.keystore" \
+              --ks-pass pass:"zashboard-open-2026" \
+              --ks-key-alias "zashboard" \
+              --key-pass pass:"zashboard-open-2026" \
+              "$UNSIGNED"
+            "$BT/apksigner" verify --verbose "$UNSIGNED"
+            local DIR
+            DIR=$(dirname "$UNSIGNED")
+            mv "$UNSIGNED" "${DIR}/zashboard-${abi}-release.apk"
+            echo "Signed: ${DIR}/zashboard-${abi}-release.apk"
+          }
 
-          # Zipalign
-          "$BT/zipalign" -f 4 "$UNSIGNED" "${UNSIGNED}.aligned"
-          mv "${UNSIGNED}.aligned" "$UNSIGNED"
+          sign_apk arm64 arm64-v8a
+          sign_apk arm armeabi-v7a
 
-          # Sign with apksigner
-          "$BT/apksigner" sign \
-            --ks "$KS_FILE" \
-            --ks-pass pass:"$KEY_PASS" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass pass:"$KEY_PASS" \
-            "$UNSIGNED"
-
-          # Verify
-          "$BT/apksigner" verify --verbose "$UNSIGNED"
-
-          # Rename to indicate signed
-          SIGNED="${APK_DIR}/zashboard-universal-release.apk"
-          mv "$UNSIGNED" "$SIGNED"
-          echo "Signed APK: $SIGNED"
-
-      - name: Upload APK
-        uses: softprops/action-gh-release@v2
+      - name: Upload Android APK to Release
         if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
           draft: false
-          files: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/zashboard-universal-release.apk
+          files: src-tauri/gen/android/app/build/outputs/apk/**/zashboard-*-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
