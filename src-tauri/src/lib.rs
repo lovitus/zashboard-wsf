@@ -910,7 +910,7 @@ fn show_or_create_window(handle: &tauri::AppHandle) {
         win.set_focus().ok();
     } else {
         let _ =
-            WebviewWindowBuilder::new(handle, "main", WebviewUrl::CustomProtocol("wsf://localhost/".parse().unwrap()))
+            WebviewWindowBuilder::new(handle, "main", WebviewUrl::CustomProtocol("wsf://localhost".parse().unwrap()))
                 .title("Zashboard - Mihomo Dashboard")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(400.0, 600.0)
@@ -971,6 +971,20 @@ pub fn run() {
             let uri = request.uri();
             let path = uri.path();
 
+            // Special endpoint: deactivate upstream and redirect to built-in UI
+            if path == "/__wsf_deactivate" {
+                let ui_state = ctx.app_handle().state::<Mutex<ui_manager::UiManagerState>>();
+                ui_manager::deactivate_from_protocol(&ui_state);
+                // Return 200 OK — the JS fetch caller will reload the page,
+                // which will now serve bundled assets since upstream is deactivated.
+                return tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", "text/plain")
+                    .header("Cache-Control", "no-store")
+                    .body(b"ok".to_vec())
+                    .unwrap();
+            }
+
             // Try to serve from active upstream version first
             let ui_state = ctx.app_handle().state::<Mutex<ui_manager::UiManagerState>>();
             if let Some((body, mime)) = ui_manager::resolve_upstream_file(&ui_state, path) {
@@ -1030,6 +1044,19 @@ pub fn run() {
             ui_manager::ui_set_custom_urls,
         ])
         .setup(move |app| {
+            // --- Navigate to wsf:// protocol when upstream UI is active ---
+            // Default URL loads bundled assets from tauri://. When an upstream version is
+            // active we redirect to the wsf:// custom protocol which serves from disk.
+            {
+                let ui_state = app.state::<Mutex<ui_manager::UiManagerState>>();
+                let has_active = ui_state.lock().map(|s| s.active_version.is_some()).unwrap_or(false);
+                if has_active {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.navigate("http://wsf.localhost/".parse().unwrap());
+                    }
+                }
+            }
+
             // --- Mobile: fix config path using Tauri's app data dir ---
             #[cfg(mobile)]
             {

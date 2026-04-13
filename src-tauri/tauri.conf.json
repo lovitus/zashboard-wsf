@@ -1,10 +1,10 @@
 {
   "productName": "zashboard",
-  "version": "1.0.2",
+  "version": "1.0.39",
   "identifier": "com.lovitus.zashboard",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:5199",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
@@ -12,7 +12,7 @@
     "windows": [
       {
         "title": "Zashboard - Mihomo Dashboard",
-        "url": "wsf://localhost/",
+        "url": "/",
         "width": 1200,
         "height": 800,
         "minWidth": 400,

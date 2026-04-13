@@ -448,6 +448,89 @@ pub async fn ui_delete_version(
 
 // --- Protocol handler helpers ---
 
+/// Script injected into upstream UI's index.html.
+/// Adds a floating "↩ Built-in UI" button that calls ui_deactivate via Tauri IPC and reloads.
+const MANAGEMENT_BUTTON_SCRIPT: &str = r#"<script>
+(function(){
+  if(window.__WSF_MGMT_BTN__) return;
+  window.__WSF_MGMT_BTN__=true;
+
+  function createBtn(){
+    var btn=document.createElement('button');
+    btn.id='wsf-mgmt-btn';
+    btn.textContent='\u21A9 Built-in UI';
+    btn.style.cssText='position:fixed;bottom:16px;right:16px;z-index:2147483647;padding:8px 16px;'+
+      'border-radius:8px;background:rgba(0,0,0,0.82);color:#fff;font-size:13px;cursor:pointer;'+
+      'border:1px solid rgba(255,255,255,0.25);backdrop-filter:blur(8px);opacity:0.9;'+
+      'transition:opacity 0.2s;font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.3);'+
+      'pointer-events:auto;user-select:none;-webkit-user-select:none;';
+    btn.onmouseenter=function(){btn.style.opacity='1';};
+    btn.onmouseleave=function(){btn.style.opacity='0.9';};
+    btn.onclick=function(){
+      btn.disabled=true;
+      btn.textContent='Switching...';
+      btn.style.opacity='0.5';
+      fetch('/__wsf_deactivate',{method:'POST',cache:'no-store'}).finally(function(){
+        // Unregister service workers so they don't serve cached upstream assets
+        if(navigator.serviceWorker){
+          navigator.serviceWorker.getRegistrations().then(function(regs){
+            var p=regs.map(function(r){return r.unregister();});
+            return Promise.all(p);
+          }).then(function(){
+            // Clear all caches
+            if(window.caches){
+              return caches.keys().then(function(names){
+                return Promise.all(names.map(function(n){return caches.delete(n);}));
+              });
+            }
+          }).finally(function(){
+            window.location.reload();
+          });
+        } else {
+          window.location.reload();
+        }
+      });
+    };
+    return btn;
+  }
+
+  function ensure(){
+    if(document.getElementById('wsf-mgmt-btn')) return;
+    var target=document.body||document.documentElement;
+    if(!target) return;
+    target.appendChild(createBtn());
+  }
+
+  // Keep the button alive: SPA frameworks may wipe body children on route changes
+  var observer=new MutationObserver(function(){ ensure(); });
+  function startObserver(){
+    if(document.body){
+      ensure();
+      observer.observe(document.body,{childList:true,subtree:false});
+    } else {
+      document.addEventListener('DOMContentLoaded',function(){
+        ensure();
+        observer.observe(document.body,{childList:true,subtree:false});
+      },{once:true});
+    }
+  }
+  startObserver();
+  // Extra safety: retry a few times in case body isn't ready yet
+  setTimeout(ensure,300);
+  setTimeout(ensure,1000);
+  setTimeout(ensure,3000);
+})();
+</script>"#;
+
+/// Deactivate upstream UI from the protocol handler (no Tauri command context needed).
+pub fn deactivate_from_protocol(state: &Mutex<UiManagerState>) {
+    if let Ok(mut s) = state.lock() {
+        s.active_version = None;
+        write_active_version(&s.base_dir, None);
+        eprintln!("Deactivated upstream UI, switched to built-in (via protocol)");
+    }
+}
+
 /// Resolve a file from the active upstream version directory.
 /// Returns `Some((body, mime))` if the upstream version is active and the file exists.
 /// Returns `None` if no upstream version is active (caller should fall back to bundled assets).
@@ -476,9 +559,35 @@ pub fn resolve_upstream_file(state: &Mutex<UiManagerState>, path: &str) -> Optio
         "index.html"
     };
 
-    let body = std::fs::read(version_dir.join(served_path)).ok()?;
+    let mut body = std::fs::read(version_dir.join(served_path)).ok()?;
     let mime = mime_type(served_path).to_string();
+
+    // Inject management button into HTML responses
+    if served_path.ends_with(".html") || served_path.ends_with(".htm") {
+        body = inject_management_button(&body);
+    }
+
     Some((body, mime))
+}
+
+/// Inject the floating management button script into HTML.
+fn inject_management_button(html_bytes: &[u8]) -> Vec<u8> {
+    let html = String::from_utf8_lossy(html_bytes);
+    if html.contains("__WSF_MGMT_BTN__") {
+        // Already injected (e.g. cached or pre-processed)
+        return html_bytes.to_vec();
+    }
+    // Insert before </body> if present, otherwise append
+    if let Some(pos) = html.find("</body>") {
+        let mut result = html[..pos].to_string();
+        result.push_str(MANAGEMENT_BUTTON_SCRIPT);
+        result.push_str(&html[pos..]);
+        result.into_bytes()
+    } else {
+        let mut result = html.to_string();
+        result.push_str(MANAGEMENT_BUTTON_SCRIPT);
+        result.into_bytes()
+    }
 }
 
 fn mime_type(path: &str) -> &'static str {
@@ -648,7 +757,7 @@ mod tests {
         let dir = create_temp_dir();
         let ver_dir = dir.join("v1.0.0");
         fs::create_dir_all(&ver_dir).unwrap();
-        fs::write(ver_dir.join("index.html"), "<html>hello</html>").unwrap();
+        fs::write(ver_dir.join("index.html"), "<html><body>hello</body></html>").unwrap();
 
         let state = Mutex::new(UiManagerState {
             active_version: Some("v1.0.0".to_string()),
@@ -660,7 +769,12 @@ mod tests {
         let result = resolve_upstream_file(&state, "/");
         assert!(result.is_some());
         let (body, mime) = result.unwrap();
-        assert_eq!(String::from_utf8_lossy(&body), "<html>hello</html>");
+        let html = String::from_utf8_lossy(&body);
+        // Original content is preserved
+        assert!(html.contains("hello"));
+        // Management button script is injected
+        assert!(html.contains("__WSF_MGMT_BTN__"));
+        assert!(html.contains("wsf-mgmt-btn"));
         assert_eq!(mime, "text/html; charset=utf-8");
         cleanup(&dir);
     }
@@ -694,7 +808,7 @@ mod tests {
         let dir = create_temp_dir();
         let ver_dir = dir.join("v1.0.0");
         fs::create_dir_all(&ver_dir).unwrap();
-        fs::write(ver_dir.join("index.html"), "<html>spa</html>").unwrap();
+        fs::write(ver_dir.join("index.html"), "<html><body>spa</body></html>").unwrap();
 
         let state = Mutex::new(UiManagerState {
             active_version: Some("v1.0.0".to_string()),
@@ -707,7 +821,9 @@ mod tests {
         let result = resolve_upstream_file(&state, "/some/route");
         assert!(result.is_some());
         let (body, mime) = result.unwrap();
-        assert_eq!(String::from_utf8_lossy(&body), "<html>spa</html>");
+        let html = String::from_utf8_lossy(&body);
+        assert!(html.contains("spa"));
+        assert!(html.contains("__WSF_MGMT_BTN__"));
         assert_eq!(mime, "text/html; charset=utf-8");
         cleanup(&dir);
     }
@@ -797,6 +913,64 @@ mod tests {
         fs::write(sub.join("c.txt"), "12345678").unwrap(); // 8 bytes
 
         assert_eq!(dir_size(&dir), 19);
+        cleanup(&dir);
+    }
+
+    // --- inject_management_button ---
+
+    #[test]
+    fn test_inject_management_button_before_body_close() {
+        let html = b"<html><body>content</body></html>";
+        let result = inject_management_button(html);
+        let result_str = String::from_utf8_lossy(&result);
+        assert!(result_str.contains("__WSF_MGMT_BTN__"));
+        assert!(result_str.contains("content"));
+        // Script should be before </body>
+        let script_pos = result_str.find("__WSF_MGMT_BTN__").unwrap();
+        let body_close_pos = result_str.find("</body>").unwrap();
+        assert!(script_pos < body_close_pos);
+    }
+
+    #[test]
+    fn test_inject_management_button_no_body_tag() {
+        let html = b"<html>no body tag</html>";
+        let result = inject_management_button(html);
+        let result_str = String::from_utf8_lossy(&result);
+        assert!(result_str.contains("__WSF_MGMT_BTN__"));
+        assert!(result_str.contains("no body tag"));
+    }
+
+    #[test]
+    fn test_inject_management_button_idempotent() {
+        let html = b"<html><body>test</body></html>";
+        let first = inject_management_button(html);
+        let second = inject_management_button(&first);
+        // Should not double-inject
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_js_assets_not_injected() {
+        let dir = create_temp_dir();
+        let ver_dir = dir.join("v1.0.0");
+        let assets_dir = ver_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(ver_dir.join("index.html"), "<html><body></body></html>").unwrap();
+        fs::write(assets_dir.join("app.js"), "console.log('hi')").unwrap();
+
+        let state = Mutex::new(UiManagerState {
+            active_version: Some("v1.0.0".to_string()),
+            base_dir: dir.clone(),
+            custom_releases_url: None,
+            custom_download_base: None,
+        });
+
+        // JS files should NOT get the management button injected
+        let result = resolve_upstream_file(&state, "/assets/app.js");
+        assert!(result.is_some());
+        let (body, _) = result.unwrap();
+        assert_eq!(String::from_utf8_lossy(&body), "console.log('hi')");
+        assert!(!String::from_utf8_lossy(&body).contains("__WSF_MGMT_BTN__"));
         cleanup(&dir);
     }
 }
