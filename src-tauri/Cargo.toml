@@ -1,6 +1,6 @@
 [package]
 name = "zashboard-wsf"
-version = "1.0.40"
+version = "1.0.41"
 description = "Native Zashboard - Mihomo Dashboard with Tunnel Support"
 authors = ["lovitus"]
 edition = "2021"

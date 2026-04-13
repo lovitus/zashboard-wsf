@@ -1,21 +1,21 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { reloadForUiSwitch } from '@/api/upstream_navigation'
 
 describe('upstream_navigation', () => {
   describe('reloadForUiSwitch', () => {
-    it('calls window.location.reload', async () => {
-      const reloadMock = vi.fn()
+    it('navigates to wsf origin', async () => {
+      const loc = { href: '' }
       Object.defineProperty(window, 'location', {
-        value: { reload: reloadMock },
+        value: loc,
         writable: true,
         configurable: true,
       })
 
       await reloadForUiSwitch()
-      expect(reloadMock).toHaveBeenCalledOnce()
+      expect(loc.href).toBe('http://wsf.localhost/')
     })
   })
 })
