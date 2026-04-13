@@ -1044,20 +1044,9 @@ pub fn run() {
             ui_manager::ui_set_custom_urls,
         ])
         .setup(move |app| {
-            // --- Navigate to wsf:// protocol when upstream UI is active ---
-            // Default URL loads bundled assets from tauri://. When an upstream version is
-            // active we redirect to the wsf:// custom protocol which serves from disk.
-            {
-                let ui_state = app.state::<Mutex<ui_manager::UiManagerState>>();
-                let has_active = ui_state.lock().map(|s| s.active_version.is_some()).unwrap_or(false);
-                if has_active {
-                    if let Some(win) = app.get_webview_window("main") {
-                        let _ = win.navigate("http://wsf.localhost/".parse().unwrap());
-                    }
-                }
-            }
-
             // --- Mobile: fix config path using Tauri's app data dir ---
+            // This MUST run before the wsf navigate check below, because on mobile
+            // the UiManagerState is rebuilt with the correct writable base dir.
             #[cfg(mobile)]
             {
                 match app.path().app_data_dir() {
@@ -1085,6 +1074,20 @@ pub fn run() {
                     }
                     Err(e) => {
                         eprintln!("WARNING: Cannot resolve app data dir: {}", e);
+                    }
+                }
+            }
+
+            // --- Navigate to wsf:// protocol when upstream UI is active ---
+            // Default URL loads bundled assets from tauri://. When an upstream version is
+            // active we redirect to the wsf:// custom protocol which serves from disk.
+            // On Windows/Android this maps to http://wsf.localhost/, on macOS/Linux to wsf://localhost/.
+            {
+                let ui_state = app.state::<Mutex<ui_manager::UiManagerState>>();
+                let has_active = ui_state.lock().map(|s| s.active_version.is_some()).unwrap_or(false);
+                if has_active {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.navigate("http://wsf.localhost/".parse().unwrap());
                     }
                 }
             }
