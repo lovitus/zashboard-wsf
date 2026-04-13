@@ -19,7 +19,6 @@ export interface UiVersionInfo {
   downloaded_versions: DownloadedVersion[]
   custom_releases_url: string | null
   custom_download_base: string | null
-  upstream_url: string | null
 }
 
 export interface DownloadedVersion {
@@ -35,8 +34,8 @@ export async function uiDownloadVersion(tag: string): Promise<string> {
   return invoke<string>('ui_download_version', { tag })
 }
 
-export async function uiActivateVersion(tag: string, storageData?: string | null): Promise<string> {
-  return invoke<string>('ui_activate_version', { tag, storageData: storageData || null })
+export async function uiActivateVersion(tag: string): Promise<string> {
+  return invoke<string>('ui_activate_version', { tag })
 }
 
 export async function uiDeactivate(): Promise<string> {

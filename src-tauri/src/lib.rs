@@ -908,49 +908,14 @@ fn show_or_create_window(handle: &tauri::AppHandle) {
         win.unminimize().ok();
         win.show().ok();
         win.set_focus().ok();
-        restore_active_upstream_if_needed(handle, &win);
     } else {
-        let created =
-            WebviewWindowBuilder::new(handle, "main", WebviewUrl::App("index.html".into()))
+        let _ =
+            WebviewWindowBuilder::new(handle, "main", WebviewUrl::CustomProtocol("wsf://localhost/".parse().unwrap()))
                 .title("Zashboard - Mihomo Dashboard")
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(400.0, 600.0)
                 .build();
-
-        if let Ok(win) = created {
-            restore_active_upstream_if_needed(handle, &win);
-        }
     }
-}
-
-#[cfg(desktop)]
-fn active_upstream_url(handle: &tauri::AppHandle) -> Option<String> {
-    let ui_state_ref = handle.state::<Mutex<ui_manager::UiManagerState>>();
-    let s = ui_state_ref.lock().ok()?;
-    let marker = s.base_dir.join("ui_active_version.txt");
-    let persisted = std::fs::read_to_string(marker).ok().unwrap_or_default();
-    let persisted = persisted.trim();
-    if persisted.is_empty() || persisted.eq_ignore_ascii_case("builtin") {
-        return None;
-    }
-    s.server_port.map(|p| format!("http://127.0.0.1:{}", p))
-}
-
-#[cfg(desktop)]
-fn restore_active_upstream_if_needed(handle: &tauri::AppHandle, win: &tauri::WebviewWindow) {
-    let Some(url) = active_upstream_url(handle) else {
-        return;
-    };
-
-    let win = win.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        let js = format!(
-            "if (window.location.href !== '{0}') {{ window.location.href = '{0}'; }}",
-            url
-        );
-        let _ = win.eval(&js);
-    });
 }
 
 // --- App entry ---
@@ -1002,6 +967,51 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Mutex::new(ts))
         .manage(Mutex::new(ui_state))
+        .register_uri_scheme_protocol("wsf", |ctx, request| {
+            let uri = request.uri();
+            let path = uri.path();
+
+            // Try to serve from active upstream version first
+            let ui_state = ctx.app_handle().state::<Mutex<ui_manager::UiManagerState>>();
+            if let Some((body, mime)) = ui_manager::resolve_upstream_file(&ui_state, path) {
+                return tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", &mime)
+                    .body(body)
+                    .unwrap();
+            }
+
+            // Fall back to bundled assets
+            let asset_path = if path.is_empty() || path == "/" {
+                "index.html"
+            } else {
+                path.trim_start_matches('/')
+            };
+
+            if let Some(asset) = ctx.app_handle().asset_resolver().get(asset_path.to_string()) {
+                let mime = asset.mime_type.clone();
+                tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", &mime)
+                    .body(asset.bytes.to_vec())
+                    .unwrap()
+            } else {
+                // SPA fallback: serve index.html for unknown routes
+                if let Some(index) = ctx.app_handle().asset_resolver().get("index.html".to_string()) {
+                    let mime = index.mime_type.clone();
+                    tauri::http::Response::builder()
+                        .status(200)
+                        .header("Content-Type", &mime)
+                        .body(index.bytes.to_vec())
+                        .unwrap()
+                } else {
+                    tauri::http::Response::builder()
+                        .status(404)
+                        .body(b"Not Found".to_vec())
+                        .unwrap()
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_tunnels,
             get_tunnel_statuses,
@@ -1020,8 +1030,6 @@ pub fn run() {
             ui_manager::ui_set_custom_urls,
         ])
         .setup(move |app| {
-            ui_manager::set_app_handle(app.handle().clone());
-
             // --- Mobile: fix config path using Tauri's app data dir ---
             #[cfg(mobile)]
             {
@@ -1035,9 +1043,6 @@ pub fn run() {
                         {
                             let ui_state = app.state::<Mutex<ui_manager::UiManagerState>>();
                             let mut ui = ui_state.lock().unwrap();
-                            if let Some(ref shutdown) = ui.server_shutdown {
-                                shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
-                            }
                             *ui = ui_manager::init_state_with_base_dir(ui_base_dir.clone());
                         }
                         eprintln!("Mobile UI base dir: {}", ui_base_dir.display());

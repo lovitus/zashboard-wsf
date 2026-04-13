@@ -12,6 +12,7 @@
     "windows": [
       {
         "title": "Zashboard - Mihomo Dashboard",
+        "url": "wsf://localhost/",
         "width": 1200,
         "height": 800,
         "minWidth": 400,

@@ -1,14 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Mutex;
 use std::time::Duration;
-#[cfg(desktop)]
-use tauri::{WebviewUrl, WebviewWindowBuilder};
-use tauri::{Manager, State};
-
-static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamRelease {
@@ -36,9 +30,6 @@ pub struct UiManagerState {
     pub base_dir: PathBuf,
     pub custom_releases_url: Option<String>,
     pub custom_download_base: Option<String>,
-    pub server_port: Option<u16>,
-    pub server_shutdown: Option<Arc<AtomicBool>>,
-    pub storage_data: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,7 +38,6 @@ pub struct UiVersionInfo {
     pub downloaded_versions: Vec<DownloadedVersion>,
     pub custom_releases_url: Option<String>,
     pub custom_download_base: Option<String>,
-    pub upstream_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -59,7 +49,6 @@ pub struct DownloadedVersion {
 const ACTIVE_VERSION_FILE: &str = "ui_active_version.txt";
 const CUSTOM_RELEASES_URL_FILE: &str = "ui_custom_releases_url.txt";
 const CUSTOM_DOWNLOAD_BASE_FILE: &str = "ui_custom_download_base.txt";
-const STORAGE_DATA_FILE: &str = "ui_storage_data.txt";
 const DEFAULT_RELEASES_URL: &str = "https://api.github.com/repos/Zephyruso/zashboard/releases";
 const DEFAULT_DOWNLOAD_BASE: &str = "https://github.com/Zephyruso/zashboard/releases/download";
 const HTTP_TIMEOUT_SECS: u64 = 30;
@@ -102,17 +91,6 @@ fn write_custom_url(base_dir: &PathBuf, filename: &str, url: Option<&str>) {
     }
 }
 
-fn read_storage_data(base_dir: &PathBuf) -> Option<String> {
-    read_trimmed_file(&base_dir.join(STORAGE_DATA_FILE))
-}
-
-fn write_storage_data(base_dir: &PathBuf, data: Option<&str>) {
-    let path = base_dir.join(STORAGE_DATA_FILE);
-    match data {
-        Some(d) if !d.is_empty() => { let _ = std::fs::write(&path, d); }
-        _ => { let _ = std::fs::remove_file(&path); }
-    }
-}
 
 fn dir_size(path: &PathBuf) -> u64 {
     let mut total = 0u64;
@@ -146,35 +124,26 @@ fn build_state(base_dir: PathBuf) -> UiManagerState {
     let active_version = read_active_version(&base_dir);
     let custom_releases_url = read_custom_url(&base_dir, CUSTOM_RELEASES_URL_FILE);
     let custom_download_base = read_custom_url(&base_dir, CUSTOM_DOWNLOAD_BASE_FILE);
-    let storage_data = read_storage_data(&base_dir);
 
-    // If a version was previously active, start the file server
-    let (server_port, server_shutdown) = if let Some(ref ver) = active_version {
+    // Validate that active version still exists on disk
+    if let Some(ref ver) = active_version {
         let version_dir = base_dir.join(ver);
-        if version_dir.join("index.html").exists() {
-            match start_file_server(version_dir, storage_data.clone(), base_dir.clone()) {
-                Ok((port, shutdown)) => {
-                    eprintln!("Resumed file server for {} on port {}", ver, port);
-                    (Some(port), Some(shutdown))
-                }
-                Err(e) => {
-                    eprintln!("WARNING: Failed to start file server for {}: {}", ver, e);
-                    (None, None)
-                }
-            }
-        } else {
-            eprintln!("WARNING: Active version {} not found on disk, ignoring", ver);
-            (None, None)
+        if !version_dir.join("index.html").exists() {
+            eprintln!("WARNING: Active version {} not found on disk, resetting to built-in", ver);
+            write_active_version(&base_dir, None);
+            return UiManagerState {
+                active_version: None,
+                base_dir,
+                custom_releases_url,
+                custom_download_base,
+            };
         }
-    } else {
-        (None, None)
-    };
+    }
 
     eprintln!(
-        "UI manager: base_dir={}, active={:?}, server_port={:?}",
+        "UI manager: base_dir={}, active={:?}",
         base_dir.display(),
         active_version,
-        server_port
     );
 
     UiManagerState {
@@ -182,9 +151,6 @@ fn build_state(base_dir: PathBuf) -> UiManagerState {
         base_dir,
         custom_releases_url,
         custom_download_base,
-        server_port,
-        server_shutdown,
-        storage_data,
     }
 }
 
@@ -380,7 +346,6 @@ fn extract_zip(bytes: &[u8], version_dir: &PathBuf) -> Result<(), String> {
 pub async fn ui_activate_version(
     state: State<'_, Mutex<UiManagerState>>,
     tag: String,
-    storage_data: Option<String>,
 ) -> Result<String, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
     let version_dir = s.base_dir.join(&tag);
@@ -388,28 +353,11 @@ pub async fn ui_activate_version(
         return Err(format!("Version {} not found or incomplete", tag));
     }
 
-    // Stop existing server if running
-    if let Some(ref shutdown) = s.server_shutdown {
-        shutdown.store(true, Ordering::Relaxed);
-        std::thread::sleep(Duration::from_millis(100));
-    }
-
-    // Persist storage data for restart recovery
-    write_storage_data(&s.base_dir, storage_data.as_deref());
-
-    // Start new file server for this version with storage data
-    let (port, shutdown) =
-        start_file_server(version_dir, storage_data.clone(), s.base_dir.clone())?;
-
     s.active_version = Some(tag.clone());
-    s.server_port = Some(port);
-    s.server_shutdown = Some(shutdown);
-    s.storage_data = storage_data;
     write_active_version(&s.base_dir, Some(&tag));
 
-    let url = format!("http://127.0.0.1:{}", port);
-    eprintln!("Activated upstream UI version {} at {}", tag, url);
-    Ok(url)
+    eprintln!("Activated upstream UI version {}", tag);
+    Ok(format!("Activated version {}", tag))
 }
 
 #[tauri::command]
@@ -418,17 +366,8 @@ pub async fn ui_deactivate(
 ) -> Result<String, String> {
     let mut s = state.lock().map_err(|e| e.to_string())?;
 
-    // Stop file server
-    if let Some(ref shutdown) = s.server_shutdown {
-        shutdown.store(true, Ordering::Relaxed);
-    }
-
     s.active_version = None;
-    s.server_port = None;
-    s.server_shutdown = None;
-    s.storage_data = None;
     write_active_version(&s.base_dir, None);
-    write_storage_data(&s.base_dir, None);
 
     eprintln!("Deactivated upstream UI, switched to built-in");
     Ok("Switched to built-in UI".to_string())
@@ -458,14 +397,11 @@ pub async fn ui_get_info(
 
     downloaded.sort_by(|a, b| b.tag.cmp(&a.tag));
 
-    let upstream_url = s.server_port.map(|p| format!("http://127.0.0.1:{}", p));
-
     Ok(UiVersionInfo {
         active_version: s.active_version.clone(),
         downloaded_versions: downloaded,
         custom_releases_url: s.custom_releases_url.clone(),
         custom_download_base: s.custom_download_base.clone(),
-        upstream_url,
     })
 }
 
@@ -510,7 +446,40 @@ pub async fn ui_delete_version(
     Ok(format!("Deleted version {}", tag))
 }
 
-// --- Local HTTP file server for upstream UI ---
+// --- Protocol handler helpers ---
+
+/// Resolve a file from the active upstream version directory.
+/// Returns `Some((body, mime))` if the upstream version is active and the file exists.
+/// Returns `None` if no upstream version is active (caller should fall back to bundled assets).
+pub fn resolve_upstream_file(state: &Mutex<UiManagerState>, path: &str) -> Option<(Vec<u8>, String)> {
+    let s = state.lock().ok()?;
+    let version = s.active_version.as_ref()?;
+    let version_dir = s.base_dir.join(version);
+
+    let clean_path = if path.is_empty() || path == "/" {
+        "index.html".to_string()
+    } else {
+        path.trim_start_matches('/').to_string()
+    };
+
+    // Security: prevent path traversal
+    if clean_path.contains("..") {
+        return None;
+    }
+
+    let file_path = version_dir.join(&clean_path);
+
+    let served_path = if file_path.exists() && file_path.is_file() {
+        clean_path.as_str()
+    } else {
+        // SPA fallback: serve index.html for unknown paths
+        "index.html"
+    };
+
+    let body = std::fs::read(version_dir.join(served_path)).ok()?;
+    let mime = mime_type(served_path).to_string();
+    Some((body, mime))
+}
 
 fn mime_type(path: &str) -> &'static str {
     let ext = path.rsplit('.').next().unwrap_or("");
@@ -535,788 +504,300 @@ fn mime_type(path: &str) -> &'static str {
     }
 }
 
-const RETURN_BUTTON_SCRIPT: &str = r#"<script>
-(function(){
-  if(window.__WSF_NAV_BUTTONS_READY__) return;
-  window.__WSF_NAV_BUTTONS_READY__=true;
-
-  function goUpstreamSetup(){
-    try{
-      if(window.location.hash !== '#/setup'){
-        window.location.hash = '#/setup';
-      }
-      if(!String(window.location.hash || '').includes('/setup')){
-        window.location.href = window.location.origin + '/#/setup';
-      }
-    }catch(_){}
-  }
-
-  function isTouchLikeDevice(){
-    try{
-      if((navigator.maxTouchPoints || 0) > 0) return true;
-      if(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
-    }catch(_){}
-    return false;
-  }
-
-  function patchUpstreamSetupTouch(){
-    try{
-      if(!document.body || !isTouchLikeDevice()) return;
-      if(String(window.location.hash || '').indexOf('/setup') === -1) return;
-
-      var rows=document.querySelectorAll('div.flex.items-center.gap-2');
-      for(var i=0;i<rows.length;i++){
-        var row=rows[i];
-        if(!row || row.dataset.wsfSetupTouchPatched==='1') continue;
-
-        var buttons=[];
-        for(var j=0;j<row.children.length;j++){
-          var child=row.children[j];
-          if(child && child.tagName==='BUTTON'){
-            buttons.push(child);
-          }
-        }
-
-        if(buttons.length < 4) continue;
-        if(!(buttons[1].classList && buttons[1].classList.contains('flex-1'))) continue;
-
-        row.dataset.wsfSetupTouchPatched='1';
-        buttons[0].style.touchAction='none';
-
-        for(var k=1;k<buttons.length;k++){
-          var actionBtn=buttons[k];
-          if(!actionBtn || actionBtn.dataset.wsfNoDragStart==='1') continue;
-
-          actionBtn.dataset.wsfNoDragStart='1';
-          actionBtn.style.touchAction='manipulation';
-
-          var stopDragStart=function(ev){
-            try{
-              ev.stopPropagation();
-            }catch(_){}
-          };
-
-          actionBtn.addEventListener('pointerdown', stopDragStart, true);
-          actionBtn.addEventListener('mousedown', stopDragStart, true);
-          actionBtn.addEventListener('touchstart', stopDragStart, { capture:true, passive:true });
-        }
-      }
-    }catch(_){}
-  }
-
-  function scheduleSetupTouchPatch(){
-    try{
-      if(String(window.location.hash || '').indexOf('/setup') === -1) return;
-    }catch(_){
-      return;
-    }
-    setTimeout(patchUpstreamSetupTouch, 0);
-    setTimeout(patchUpstreamSetupTouch, 120);
-    setTimeout(patchUpstreamSetupTouch, 360);
-    setTimeout(patchUpstreamSetupTouch, 900);
-  }
-
-  function trySwitchBuiltin(btn){
-    try{
-      if(btn && btn.dataset.busy === '1') return;
-      if(btn){
-        btn.dataset.busy='1';
-        btn.style.pointerEvents='none';
-        btn.style.opacity='0.72';
-        btn.textContent='Switching...';
-      }
-
-      var postBuiltin=function(){
-        return fetch('/__wsf_builtin', { method:'POST', cache:'no-store', keepalive:true }).catch(function(){});
-      };
-      postBuiltin();
-      setTimeout(postBuiltin, 500);
-      setTimeout(postBuiltin, 1300);
-      setTimeout(function(){
-        try{
-          if(!document.hidden){
-            window.location.replace('/__wsf_builtin?landing=1');
-          }
-        }catch(_){}
-      }, 2200);
-
-      // Keep user on current page if native switch fails; allow manual retry.
-      setTimeout(function(){
-        if(btn){
-          btn.style.pointerEvents='auto';
-          btn.style.opacity='0.9';
-          btn.dataset.busy='0';
-          btn.textContent='\u21A9 Built-in UI';
-        }
-      }, 4200);
-    }catch(_){}
-  }
-
-  function inject(){
-    try{
-      if(!document.body) return;
-
-      if(!document.getElementById('__wsf_builtin_btn')){
-        var btn=document.createElement('button');
-        btn.id='__wsf_builtin_btn';
-        btn.type='button';
-        btn.textContent='\u21A9 Built-in UI';
-        btn.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom), 16px) + 18px);z-index:2147483647;background:rgba(59,130,246,.85);color:#fff;padding:7px 12px;border-radius:8px;border:0;cursor:pointer;font-size:12px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.3);opacity:0.9;transition:opacity .2s;white-space:nowrap;max-width:45vw;overflow:hidden;text-overflow:ellipsis;';
-        btn.onmouseenter=function(){btn.style.opacity='1';};
-        btn.onmouseleave=function(){btn.style.opacity='0.9';};
-        btn.onclick=function(ev){
-          try{
-            if(ev){
-              ev.preventDefault();
-              ev.stopPropagation();
-            }
-          }catch(_){}
-          trySwitchBuiltin(btn);
-          return false;
-        };
-        document.body.appendChild(btn);
-      }
-
-      if(!document.getElementById('__wsf_setup_btn')){
-        var setupBtn=document.createElement('button');
-        setupBtn.id='__wsf_setup_btn';
-        setupBtn.type='button';
-        setupBtn.textContent='Setup';
-        setupBtn.style.cssText='position:fixed;left:12px;top:calc(max(env(safe-area-inset-top), 12px) + 8px);z-index:2147483647;background:rgba(255,255,255,.62);color:#111827;padding:6px 10px;border-radius:8px;border:1px solid rgba(107,114,128,.35);cursor:pointer;font-size:12px;line-height:1;backdrop-filter:blur(2px);';
-        setupBtn.onclick=function(ev){
-          try{
-            if(ev){
-              ev.preventDefault();
-              ev.stopPropagation();
-            }
-          }catch(_){}
-          goUpstreamSetup();
-          return false;
-        };
-        document.body.appendChild(setupBtn);
-      }
-
-      scheduleSetupTouchPatch();
-    }catch(_){}
-  }
-
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded', inject, { once:true });
-  }
-  window.addEventListener('hashchange', scheduleSetupTouchPatch);
-  inject();
-  setTimeout(inject, 300);
-  setTimeout(inject, 1200);
-})();
-</script>"#;
-
-const SAFE_AREA_FIXED_PATCH_SCRIPT: &str = r#"<script>
-(function(){
-  if(window.__WSF_SAFE_AREA_PATCHED__) return;
-  window.__WSF_SAFE_AREA_PATCHED__=true;
-
-  function patchBars(){
-    try{
-      var style=document.getElementById('__wsf_safe_area_style');
-      if(!style){
-        style=document.createElement('style');
-        style.id='__wsf_safe_area_style';
-        (document.head || document.documentElement).appendChild(style);
-      }
-      style.textContent=
-        ':root{--wsf-safe-top:max(env(safe-area-inset-top), 24px);--wsf-safe-bottom:max(env(safe-area-inset-bottom), 24px);}' +
-        '@media (max-width: 900px){' +
-        '.ctrls-bar{padding-top:var(--wsf-safe-top)!important;}' +
-        '.dock{bottom:calc(var(--spacing,4px) * 2 + var(--wsf-safe-bottom))!important;}' +
-        '.dock-shadow{height:var(--wsf-safe-bottom)!important;}' +
-        '}';
-    }catch(_){}
-  }
-
-  patchBars();
-  window.addEventListener('resize', patchBars);
-  window.addEventListener('load', patchBars);
-  setTimeout(patchBars, 300);
-  setTimeout(patchBars, 1200);
-})();
-</script>"#;
-
-const CORS_PROXY_PATCH_SCRIPT: &str = r#"<script>
-(function(){
-  if(window.__WSF_PROXY_PATCHED__) return;
-  window.__WSF_PROXY_PATCHED__=true;
-  var proxyPrefix='/__wsf_proxy?url=';
-  function toProxyUrl(input){
-    try{
-      if(typeof input!=='string') return input;
-      if(input.indexOf(proxyPrefix)===0) return input;
-      var u=new URL(input, window.location.href);
-      if(!/^https?:$/.test(u.protocol)) return input;
-      if(u.origin===window.location.origin) return u.toString();
-      return proxyPrefix + encodeURIComponent(u.toString());
-    }catch(_){
-      return input;
-    }
-  }
-
-  if(window.XMLHttpRequest && !window.__WSF_XHR_PATCHED__){
-    window.__WSF_XHR_PATCHED__=true;
-    var nativeOpen=XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open=function(method,url){
-      arguments[1]=toProxyUrl(String(url||''));
-      return nativeOpen.apply(this,arguments);
-    };
-  }
-
-  if(window.fetch && !window.__WSF_FETCH_PATCHED__){
-    window.__WSF_FETCH_PATCHED__=true;
-    var nativeFetch=window.fetch.bind(window);
-    window.fetch=function(input,init){
-      try{
-        if(typeof input==='string'){
-          return nativeFetch(toProxyUrl(input),init);
-        }
-        if(input && input.url){
-          var proxied=toProxyUrl(input.url);
-          if(proxied!==input.url){
-            return nativeFetch(new Request(proxied,input),init);
-          }
-        }
-      }catch(_){}
-      return nativeFetch(input,init);
-    };
-  }
-})();
-</script>"#;
-
-struct ParsedHttpRequest {
-    method: String,
-    raw_path: String,
-    headers: Vec<(String, String)>,
-    body: Vec<u8>,
-}
-
-pub fn set_app_handle(handle: tauri::AppHandle) {
-    let _ = APP_HANDLE.set(handle);
-}
-
-fn navigate_main_to_builtin() {
-    let Some(handle) = APP_HANDLE.get().cloned() else {
-        return;
-    };
-
-    let _ = handle.clone().run_on_main_thread(move || {
-        #[cfg(desktop)]
-        {
-            if let Some(window) = handle.get_webview_window("main") {
-                let _ = window.close();
-            }
-
-            let created = WebviewWindowBuilder::new(
-                &handle,
-                "main",
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("Zashboard - Mihomo Dashboard")
-            .inner_size(1200.0, 800.0)
-            .min_inner_size(400.0, 600.0)
-            .build();
-
-            if let Ok(window) = created {
-                let _ = window.show();
-                let _ = window.set_focus();
-            } else if let Some(window) = handle.get_webview_window("main") {
-                let _ = window.eval("window.location.href='https://tauri.localhost/#/setup';");
-            }
-        }
-
-        #[cfg(not(desktop))]
-        {
-            eprintln!("WSF builtin switch: mobile attempt start");
-
-            // On Android, URL-based navigation can report success before ultimately
-            // landing on ERR_CONNECTION_REFUSED. Prefer opening a fresh App webview.
-            let recover_label = format!(
-                "wsf-builtin-recover-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis())
-                    .unwrap_or(0)
-            );
-
-            match tauri::WebviewWindowBuilder::new(
-                &handle,
-                recover_label,
-                tauri::WebviewUrl::App("index.html".into()),
-            )
-            .build()
-            {
-                Ok(_window) => {
-                    eprintln!("WSF builtin switch: mobile opened recovery built-in window");
-                    return;
-                }
-                Err(e) => {
-                    eprintln!("WSF builtin switch: mobile recovery window failed: {}", e);
-                }
-            }
-
-            eprintln!("WSF builtin switch: mobile native recovery unavailable, waiting for landing page fallback");
-        }
-    });
-}
-
-fn request_app_restart() {
-    let Some(handle) = APP_HANDLE.get().cloned() else {
-        return;
-    };
-
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(250));
-        eprintln!("WSF builtin switch: requesting app restart");
-        handle.request_restart();
-    });
-}
-
-fn start_file_server(
-    root_dir: PathBuf,
-    storage_data: Option<String>,
-    base_dir: PathBuf,
-) -> Result<(u16, Arc<AtomicBool>), String> {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| format!("Failed to bind HTTP server: {}", e))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("Failed to get server address: {}", e))?
-        .port();
-    listener
-        .set_nonblocking(true)
-        .map_err(|e| format!("Failed to configure server: {}", e))?;
-
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let shutdown_flag = shutdown.clone();
-
-    std::thread::spawn(move || {
-        eprintln!(
-            "File server started on 127.0.0.1:{} serving {}",
-            port,
-            root_dir.display()
-        );
-        while !shutdown_flag.load(Ordering::Relaxed) {
-            match listener.accept() {
-                Ok((stream, _)) => {
-                    let root = root_dir.clone();
-                    let sd = storage_data.clone();
-                    let base = base_dir.clone();
-                    let req_shutdown = shutdown_flag.clone();
-                    std::thread::spawn(move || {
-                        if let Err(e) =
-                            handle_http_request(stream, &root, sd.as_deref(), &base, &req_shutdown)
-                        {
-                            eprintln!("HTTP handler error: {}", e);
-                        }
-                    });
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-                Err(e) => {
-                    if !shutdown_flag.load(Ordering::Relaxed) {
-                        eprintln!("HTTP accept error: {}", e);
-                    }
-                    break;
-                }
-            }
-        }
-        eprintln!("File server on port {} stopped", port);
-    });
-
-    Ok((port, shutdown))
-}
-
-fn handle_http_request(
-    mut stream: std::net::TcpStream,
-    root: &std::path::Path,
-    storage_data: Option<&str>,
-    base_dir: &PathBuf,
-    shutdown: &Arc<AtomicBool>,
-) -> Result<(), String> {
-    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
-    stream
-        .set_write_timeout(Some(Duration::from_secs(10)))
-        .ok();
-
-    let req = read_http_request(&mut stream)?;
-    let path_and_query = req.raw_path.split('#').next().unwrap_or("/");
-    let (path, query) = split_path_query(path_and_query);
-
-    if path == "/__wsf_builtin" {
-        if req.method != "GET" && req.method != "HEAD" && req.method != "POST" {
-            return send_http_response(
-                &mut stream,
-                405,
-                "text/plain",
-                b"Method Not Allowed",
-            );
-        }
-        let wants_restart = query
-            .and_then(|q| query_param(q, "restart"))
-            .is_some();
-        write_active_version(base_dir, None);
-        write_storage_data(base_dir, None);
-        let delayed_shutdown = shutdown.clone();
-        std::thread::spawn(move || {
-            // Keep the local server alive briefly so button retries still work
-            // while native built-in navigation is attempting multiple fallbacks.
-            std::thread::sleep(Duration::from_secs(8));
-            delayed_shutdown.store(true, Ordering::Relaxed);
-        });
-        if wants_restart {
-            request_app_restart();
-        } else {
-            navigate_main_to_builtin();
-        }
-        if req.method == "HEAD" {
-            return send_http_response(&mut stream, 200, "text/plain", &[]);
-        }
-        return send_http_response(
-            &mut stream,
-            200,
-            "text/html; charset=utf-8",
-            br#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font:14px sans-serif;padding:16px;line-height:1.5;">Switching to built-in UI...<br/><button style="margin-top:12px;padding:8px 10px;" onclick="fetch('/__wsf_builtin',{method:'POST',cache:'no-store'}).catch(function(){});">Retry native switch</button><button style="margin-top:12px;margin-left:8px;padding:8px 10px;" onclick="fetch('/__wsf_builtin?restart=1',{method:'POST',cache:'no-store'}).catch(function(){});">Restart app to built-in UI</button><button style="margin-top:12px;margin-left:8px;padding:8px 10px;" onclick="location.href=location.origin+'/#/setup';">Open upstream setup</button></body></html>"#,
-        );
-    }
-
-    if path == "/__wsf_proxy" {
-        if let Err(e) = handle_proxy_request(&mut stream, &req, query.unwrap_or("")) {
-            let msg = format!("Bad Gateway: {}", e);
-            return send_http_response(&mut stream, 502, "text/plain", msg.as_bytes());
-        }
-        return Ok(());
-    }
-
-    if req.method != "GET" && req.method != "HEAD" {
-        return send_http_response(
-            &mut stream,
-            405,
-            "text/plain",
-            b"Method Not Allowed",
-        );
-    }
-
-    let decoded = percent_decode(path);
-    let clean_path = if decoded.is_empty() || decoded == "/" {
-        "index.html".to_string()
-    } else {
-        decoded.trim_start_matches('/').to_string()
-    };
-
-    // Security: prevent path traversal
-    if clean_path.contains("..") {
-        return send_http_response(&mut stream, 403, "text/plain", b"Forbidden");
-    }
-
-    let file_path = root.join(&clean_path);
-
-    let (body, content_type) = if file_path.exists() && file_path.is_file() {
-        let content =
-            std::fs::read(&file_path).map_err(|e| format!("File read error: {}", e))?;
-        let mime = mime_type(&clean_path);
-        if mime.starts_with("text/html") {
-            (inject_scripts(&content, storage_data), mime)
-        } else {
-            (content, mime)
-        }
-    } else {
-        // SPA fallback: serve index.html for unknown paths
-        let index = root.join("index.html");
-        if index.exists() {
-            let content =
-                std::fs::read(&index).map_err(|e| format!("Index read error: {}", e))?;
-            (inject_scripts(&content, storage_data), "text/html; charset=utf-8")
-        } else {
-            return send_http_response(&mut stream, 404, "text/plain", b"Not Found");
-        }
-    };
-
-    if req.method == "HEAD" {
-        send_http_response(&mut stream, 200, content_type, &[])
-    } else {
-        send_http_response(&mut stream, 200, content_type, &body)
-    }
-}
-
-fn read_http_request(stream: &mut std::net::TcpStream) -> Result<ParsedHttpRequest, String> {
-    let mut data = Vec::with_capacity(8192);
-    let mut buf = [0u8; 4096];
-    let header_end = loop {
-        let n = stream
-            .read(&mut buf)
-            .map_err(|e| format!("Read error: {}", e))?;
-        if n == 0 {
-            if data.is_empty() {
-                return Err("Empty request".to_string());
-            }
-            return Err("Unexpected EOF while reading headers".to_string());
-        }
-        data.extend_from_slice(&buf[..n]);
-        if data.len() > 1024 * 1024 {
-            return Err("Request header too large".to_string());
-        }
-        if let Some(pos) = find_bytes(&data, b"\r\n\r\n") {
-            break pos + 4;
-        }
-    };
-
-    let header_text = String::from_utf8_lossy(&data[..header_end]);
-    let mut lines = header_text.split("\r\n");
-
-    let request_line = lines.next().unwrap_or("");
-    let parts: Vec<&str> = request_line.split_whitespace().collect();
-    if parts.len() < 2 {
-        return Err("Invalid request line".to_string());
-    }
-
-    let mut headers = Vec::new();
-    let mut content_length = 0usize;
-    for line in lines {
-        if line.is_empty() {
-            continue;
-        }
-        if let Some((name, value)) = line.split_once(':') {
-            let name = name.trim().to_string();
-            let value = value.trim().to_string();
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = value.parse::<usize>().unwrap_or(0);
-            }
-            headers.push((name, value));
-        }
-    }
-
-    let mut body = data[header_end..].to_vec();
-    while body.len() < content_length {
-        let n = stream
-            .read(&mut buf)
-            .map_err(|e| format!("Read body error: {}", e))?;
-        if n == 0 {
-            break;
-        }
-        body.extend_from_slice(&buf[..n]);
-        if body.len() > 16 * 1024 * 1024 {
-            return Err("Request body too large".to_string());
-        }
-    }
-
-    if body.len() < content_length {
-        return Err("Request body truncated".to_string());
-    }
-    if body.len() > content_length {
-        body.truncate(content_length);
-    }
-
-    Ok(ParsedHttpRequest {
-        method: parts[0].to_string(),
-        raw_path: parts[1].to_string(),
-        headers,
-        body,
-    })
-}
-
-fn split_path_query(path: &str) -> (&str, Option<&str>) {
-    if let Some((p, q)) = path.split_once('?') {
-        (p, Some(q))
-    } else {
-        (path, None)
-    }
-}
-
-fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || haystack.len() < needle.len() {
-        return None;
-    }
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-fn query_param(query: &str, key: &str) -> Option<String> {
-    for pair in query.split('&') {
-        if let Some((k, v)) = pair.split_once('=') {
-            if k == key {
-                return Some(v.to_string());
-            }
-        } else if pair == key {
-            return Some(String::new());
-        }
-    }
-    None
-}
-
-fn handle_proxy_request(
-    stream: &mut std::net::TcpStream,
-    req: &ParsedHttpRequest,
-    query: &str,
-) -> Result<(), String> {
-    let encoded_url = query_param(query, "url").ok_or_else(|| "Missing url".to_string())?;
-    let target_url = percent_decode(&encoded_url);
-    if !target_url.starts_with("http://") && !target_url.starts_with("https://") {
-        return Err("Only http/https proxy targets are allowed".to_string());
-    }
-
-    let method = reqwest::Method::from_bytes(req.method.as_bytes())
-        .map_err(|e| format!("Invalid method: {}", e))?;
-
-    eprintln!("WSF proxy: {} {}", req.method, target_url);
-
-    let client = reqwest::blocking::Client::builder()
-        .no_proxy()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(60))
-        // Upstream dashboard users often configure HTTPS backends with self-signed certs.
-        // Browser path may work with user trust settings while reqwest does not.
-        .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|e| format!("Proxy HTTP client error: {}", e))?;
-
-    let mut request_builder = client.request(method, &target_url);
-    for (name, value) in &req.headers {
-        let lower = name.to_ascii_lowercase();
-        if matches!(
-            lower.as_str(),
-            "host" | "content-length" | "connection" | "origin" | "referer" | "accept-encoding"
-        ) {
-            continue;
-        }
-        request_builder = request_builder.header(name, value);
-    }
-    if !req.body.is_empty() {
-        request_builder = request_builder.body(req.body.clone());
-    }
-
-    let response = request_builder
-        .send()
-        .map_err(|e| format!("Proxy request failed ({}): {}", target_url, e))?;
-
-    let status = response.status().as_u16();
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream")
-        .to_string();
-
-    if req.method == "HEAD" {
-        return send_http_response(stream, status, &content_type, &[]);
-    }
-
-    let body = response
-        .bytes()
-        .map_err(|e| format!("Proxy read body failed: {}", e))?;
-    send_http_response(stream, status, &content_type, body.as_ref())
-}
-
-fn inject_scripts(html_bytes: &[u8], storage_b64: Option<&str>) -> Vec<u8> {
-    let html = String::from_utf8_lossy(html_bytes);
-    let mut result = html.to_string();
-
-    // Inject scripts right after <head> so they run before SPA bundles.
-    let mut head_scripts = String::new();
-    head_scripts.push_str(SAFE_AREA_FIXED_PATCH_SCRIPT);
-    head_scripts.push_str(CORS_PROXY_PATCH_SCRIPT);
-
-    if let Some(data) = storage_b64 {
-        let storage_script = format!(
-            "<script>(function(){{try{{var d=JSON.parse(decodeURIComponent(atob('{}')));for(var k in d){{if(d.hasOwnProperty(k))localStorage.setItem(k,d[k]);}}}}catch(e){{console.error('WSF storage restore:',e)}}}})()</script>",
-            data
-        );
-        head_scripts.push_str(&storage_script);
-    }
-
-    if let Some(pos) = result.find("<head>") {
-        result.insert_str(pos + 6, &head_scripts);
-    } else if let Some(pos) = result.find("<HEAD>") {
-        result.insert_str(pos + 6, &head_scripts);
-    } else {
-        result = format!("{}{}", head_scripts, result);
-    }
-
-    // Inject return button before </body>.
-    if result.contains("</body>") {
-        result = result.replace("</body>", &format!("{}\n</body>", RETURN_BUTTON_SCRIPT));
-    } else {
-        result.push_str(RETURN_BUTTON_SCRIPT);
-    }
-
-    result.into_bytes()
-}
-
 fn sync_state_with_disk(s: &mut UiManagerState) {
     let disk_active = read_active_version(&s.base_dir);
     if disk_active.is_none() && s.active_version.is_some() {
-        if let Some(ref shutdown) = s.server_shutdown {
-            shutdown.store(true, Ordering::Relaxed);
-        }
         s.active_version = None;
-        s.server_port = None;
-        s.server_shutdown = None;
-        s.storage_data = None;
     }
 }
 
-fn send_http_response(
-    stream: &mut std::net::TcpStream,
-    status: u16,
-    content_type: &str,
-    body: &[u8],
-) -> Result<(), String> {
-    let status_text = match status {
-        200 => "OK",
-        400 => "Bad Request",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        502 => "Bad Gateway",
-        _ => "Error",
-    };
-    let header = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
-        status, status_text, content_type, body.len()
-    );
-    stream
-        .write_all(header.as_bytes())
-        .map_err(|e| format!("Write header: {}", e))?;
-    stream
-        .write_all(body)
-        .map_err(|e| format!("Write body: {}", e))?;
-    stream.flush().map_err(|e| format!("Flush: {}", e))?;
-    Ok(())
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn create_temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("wsf_test_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn cleanup(dir: &PathBuf) {
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    // --- mime_type ---
+
+    #[test]
+    fn test_mime_type_html() {
+        assert_eq!(mime_type("index.html"), "text/html; charset=utf-8");
+        assert_eq!(mime_type("page.htm"), "text/html; charset=utf-8");
+    }
+
+    #[test]
+    fn test_mime_type_js_css() {
+        assert_eq!(mime_type("app.js"), "application/javascript");
+        assert_eq!(mime_type("module.mjs"), "application/javascript");
+        assert_eq!(mime_type("style.css"), "text/css");
+    }
+
+    #[test]
+    fn test_mime_type_images() {
+        assert_eq!(mime_type("logo.png"), "image/png");
+        assert_eq!(mime_type("photo.jpg"), "image/jpeg");
+        assert_eq!(mime_type("photo.jpeg"), "image/jpeg");
+        assert_eq!(mime_type("icon.svg"), "image/svg+xml");
+        assert_eq!(mime_type("pic.webp"), "image/webp");
+        assert_eq!(mime_type("favicon.ico"), "image/x-icon");
+    }
+
+    #[test]
+    fn test_mime_type_fonts() {
+        assert_eq!(mime_type("font.woff"), "font/woff");
+        assert_eq!(mime_type("font.woff2"), "font/woff2");
+        assert_eq!(mime_type("font.ttf"), "font/ttf");
+    }
+
+    #[test]
+    fn test_mime_type_unknown() {
+        assert_eq!(mime_type("data.xyz"), "application/octet-stream");
+        assert_eq!(mime_type("noext"), "application/octet-stream");
+    }
+
+    // --- active version read/write ---
+
+    #[test]
+    fn test_read_write_active_version() {
+        let dir = create_temp_dir();
+
+        assert_eq!(read_active_version(&dir), None);
+
+        write_active_version(&dir, Some("v1.0.0"));
+        assert_eq!(read_active_version(&dir), Some("v1.0.0".to_string()));
+
+        write_active_version(&dir, None);
+        assert_eq!(read_active_version(&dir), None);
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_read_active_version_builtin() {
+        let dir = create_temp_dir();
+        fs::write(dir.join(ACTIVE_VERSION_FILE), "builtin").unwrap();
+        assert_eq!(read_active_version(&dir), None);
+        cleanup(&dir);
+    }
+
+    // --- build_state ---
+
+    #[test]
+    fn test_build_state_empty_dir() {
+        let dir = create_temp_dir();
+        let state = build_state(dir.clone());
+        assert!(state.active_version.is_none());
+        assert_eq!(state.base_dir, dir);
+        assert!(state.custom_releases_url.is_none());
+        assert!(state.custom_download_base.is_none());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_build_state_with_active_version() {
+        let dir = create_temp_dir();
+        let ver_dir = dir.join("v1.2.3");
+        fs::create_dir_all(&ver_dir).unwrap();
+        fs::write(ver_dir.join("index.html"), "<html></html>").unwrap();
+        write_active_version(&dir, Some("v1.2.3"));
+
+        let state = build_state(dir.clone());
+        assert_eq!(state.active_version, Some("v1.2.3".to_string()));
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_build_state_resets_missing_version() {
+        let dir = create_temp_dir();
+        write_active_version(&dir, Some("v_gone"));
+        // No version dir on disk
+
+        let state = build_state(dir.clone());
+        assert!(state.active_version.is_none());
+        // Also check that disk file was reset
+        assert_eq!(read_active_version(&dir), None);
+        cleanup(&dir);
+    }
+
+    // --- resolve_upstream_file ---
+
+    #[test]
+    fn test_resolve_upstream_file_no_active() {
+        let dir = create_temp_dir();
+        let state = Mutex::new(UiManagerState {
+            active_version: None,
+            base_dir: dir.clone(),
+            custom_releases_url: None,
+            custom_download_base: None,
+        });
+        assert!(resolve_upstream_file(&state, "/").is_none());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_resolve_upstream_file_serves_index() {
+        let dir = create_temp_dir();
+        let ver_dir = dir.join("v1.0.0");
+        fs::create_dir_all(&ver_dir).unwrap();
+        fs::write(ver_dir.join("index.html"), "<html>hello</html>").unwrap();
+
+        let state = Mutex::new(UiManagerState {
+            active_version: Some("v1.0.0".to_string()),
+            base_dir: dir.clone(),
+            custom_releases_url: None,
+            custom_download_base: None,
+        });
+
+        let result = resolve_upstream_file(&state, "/");
+        assert!(result.is_some());
+        let (body, mime) = result.unwrap();
+        assert_eq!(String::from_utf8_lossy(&body), "<html>hello</html>");
+        assert_eq!(mime, "text/html; charset=utf-8");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_resolve_upstream_file_serves_asset() {
+        let dir = create_temp_dir();
+        let ver_dir = dir.join("v1.0.0");
+        let assets_dir = ver_dir.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(ver_dir.join("index.html"), "<html></html>").unwrap();
+        fs::write(assets_dir.join("app.js"), "console.log('hi')").unwrap();
+
+        let state = Mutex::new(UiManagerState {
+            active_version: Some("v1.0.0".to_string()),
+            base_dir: dir.clone(),
+            custom_releases_url: None,
+            custom_download_base: None,
+        });
+
+        let result = resolve_upstream_file(&state, "/assets/app.js");
+        assert!(result.is_some());
+        let (body, mime) = result.unwrap();
+        assert_eq!(String::from_utf8_lossy(&body), "console.log('hi')");
+        assert_eq!(mime, "application/javascript");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_resolve_upstream_file_spa_fallback() {
+        let dir = create_temp_dir();
+        let ver_dir = dir.join("v1.0.0");
+        fs::create_dir_all(&ver_dir).unwrap();
+        fs::write(ver_dir.join("index.html"), "<html>spa</html>").unwrap();
+
+        let state = Mutex::new(UiManagerState {
+            active_version: Some("v1.0.0".to_string()),
+            base_dir: dir.clone(),
+            custom_releases_url: None,
+            custom_download_base: None,
+        });
+
+        // Non-existent path should fall back to index.html
+        let result = resolve_upstream_file(&state, "/some/route");
+        assert!(result.is_some());
+        let (body, mime) = result.unwrap();
+        assert_eq!(String::from_utf8_lossy(&body), "<html>spa</html>");
+        assert_eq!(mime, "text/html; charset=utf-8");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_resolve_upstream_file_blocks_traversal() {
+        let dir = create_temp_dir();
+        let ver_dir = dir.join("v1.0.0");
+        fs::create_dir_all(&ver_dir).unwrap();
+        fs::write(ver_dir.join("index.html"), "<html></html>").unwrap();
+
+        let state = Mutex::new(UiManagerState {
+            active_version: Some("v1.0.0".to_string()),
+            base_dir: dir.clone(),
+            custom_releases_url: None,
+            custom_download_base: None,
+        });
+
+        assert!(resolve_upstream_file(&state, "/../../etc/passwd").is_none());
+        assert!(resolve_upstream_file(&state, "/../secret").is_none());
+        cleanup(&dir);
+    }
+
+    // --- sync_state_with_disk ---
+
+    #[test]
+    fn test_sync_state_with_disk_clears_stale() {
+        let dir = create_temp_dir();
+        // No active file on disk, but state thinks v1 is active
+        let mut state = UiManagerState {
+            active_version: Some("v1.0.0".to_string()),
+            base_dir: dir.clone(),
+            custom_releases_url: None,
+            custom_download_base: None,
+        };
+
+        sync_state_with_disk(&mut state);
+        assert!(state.active_version.is_none());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn test_sync_state_with_disk_keeps_valid() {
+        let dir = create_temp_dir();
+        write_active_version(&dir, Some("v2.0.0"));
+        let mut state = UiManagerState {
+            active_version: Some("v2.0.0".to_string()),
+            base_dir: dir.clone(),
+            custom_releases_url: None,
+            custom_download_base: None,
+        };
+
+        sync_state_with_disk(&mut state);
+        assert_eq!(state.active_version, Some("v2.0.0".to_string()));
+        cleanup(&dir);
+    }
+
+    // --- custom URL read/write ---
+
+    #[test]
+    fn test_custom_url_read_write() {
+        let dir = create_temp_dir();
+
+        assert!(read_custom_url(&dir, CUSTOM_RELEASES_URL_FILE).is_none());
+
+        write_custom_url(&dir, CUSTOM_RELEASES_URL_FILE, Some("https://example.com/releases"));
+        assert_eq!(
+            read_custom_url(&dir, CUSTOM_RELEASES_URL_FILE),
+            Some("https://example.com/releases".to_string())
+        );
+
+        write_custom_url(&dir, CUSTOM_RELEASES_URL_FILE, None);
+        assert!(read_custom_url(&dir, CUSTOM_RELEASES_URL_FILE).is_none());
+
+        cleanup(&dir);
+    }
+
+    // --- dir_size ---
+
+    #[test]
+    fn test_dir_size() {
+        let dir = create_temp_dir();
+        fs::write(dir.join("a.txt"), "hello").unwrap(); // 5 bytes
+        fs::write(dir.join("b.txt"), "world!").unwrap(); // 6 bytes
+        let sub = dir.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("c.txt"), "12345678").unwrap(); // 8 bytes
+
+        assert_eq!(dir_size(&dir), 19);
+        cleanup(&dir);
+    }
 }
 
-fn percent_decode(s: &str) -> String {
-    let input = s.as_bytes();
-    let mut out = Vec::with_capacity(input.len());
-    let mut i = 0usize;
-    while i < input.len() {
-        match input[i] {
-            b'%' if i + 2 < input.len() => {
-                let hi = (input[i + 1] as char).to_digit(16);
-                let lo = (input[i + 2] as char).to_digit(16);
-                if let (Some(h), Some(l)) = (hi, lo) {
-                    out.push((h * 16 + l) as u8);
-                    i += 3;
-                    continue;
-                }
-                out.push(input[i]);
-                i += 1;
-            }
-            b'+' => {
-                out.push(b' ');
-                i += 1;
-            }
-            ch => {
-                out.push(ch);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).to_string()
-}

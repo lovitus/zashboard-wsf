@@ -231,7 +231,7 @@ import {
   uiGetInfo,
   uiSetCustomUrls,
 } from '@/api/ui_manager'
-import { encodeStorageSnapshot } from '@/api/upstream_navigation'
+import { reloadForUiSwitch } from '@/api/upstream_navigation'
 import { computed, onMounted, ref } from 'vue'
 
 const releases = ref<UpstreamRelease[]>([])
@@ -304,12 +304,11 @@ const handleActivate = async (tag: string) => {
   switching.value = true
   error.value = ''
   try {
-    const storageB64 = encodeStorageSnapshot()
-    await uiActivateVersion(tag, storageB64)
-    await refreshInfo()
+    await uiActivateVersion(tag)
+    // Reload to pick up upstream UI assets from the same origin
+    reloadForUiSwitch()
   } catch (e) {
     error.value = String(e)
-  } finally {
     switching.value = false
   }
 }
@@ -319,10 +318,10 @@ const handleDeactivate = async () => {
   error.value = ''
   try {
     await uiDeactivate()
-    await refreshInfo()
+    // Reload to switch back to built-in UI assets
+    reloadForUiSwitch()
   } catch (e) {
     error.value = String(e)
-  } finally {
     switching.value = false
   }
 }
