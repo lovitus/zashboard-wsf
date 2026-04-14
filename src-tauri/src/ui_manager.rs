@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::{Manager, State};
+use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamRelease {
@@ -344,28 +344,17 @@ fn extract_zip(bytes: &[u8], version_dir: &PathBuf) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn ui_activate_version(
-    app: tauri::AppHandle,
     state: State<'_, Mutex<UiManagerState>>,
     tag: String,
 ) -> Result<String, String> {
-    {
-        let mut s = state.lock().map_err(|e| e.to_string())?;
-        let version_dir = s.base_dir.join(&tag);
-        if !version_dir.join("index.html").exists() {
-            return Err(format!("Version {} not found or incomplete", tag));
-        }
-
-        s.active_version = Some(tag.clone());
-        write_active_version(&s.base_dir, Some(&tag));
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+    let version_dir = s.base_dir.join(&tag);
+    if !version_dir.join("index.html").exists() {
+        return Err(format!("Version {} not found or incomplete", tag));
     }
 
-    // Navigate the webview to the wsf protocol so it picks up upstream assets.
-    // Frontend JS cannot reliably navigate across origins (tauri:// → wsf://),
-    // so we do it from the Rust side.
-    if let Some(win) = app.get_webview_window("main") {
-        let url: tauri::Url = "http://wsf.localhost/#/setup".parse().unwrap();
-        let _ = win.navigate(url);
-    }
+    s.active_version = Some(tag.clone());
+    write_active_version(&s.base_dir, Some(&tag));
 
     eprintln!("Activated upstream UI version {}", tag);
     Ok(format!("Activated version {}", tag))
@@ -373,21 +362,12 @@ pub async fn ui_activate_version(
 
 #[tauri::command]
 pub async fn ui_deactivate(
-    app: tauri::AppHandle,
     state: State<'_, Mutex<UiManagerState>>,
 ) -> Result<String, String> {
-    {
-        let mut s = state.lock().map_err(|e| e.to_string())?;
-        s.active_version = None;
-        write_active_version(&s.base_dir, None);
-    }
+    let mut s = state.lock().map_err(|e| e.to_string())?;
 
-    // Navigate back to wsf origin — the protocol handler will now serve
-    // bundled assets since upstream is deactivated.
-    if let Some(win) = app.get_webview_window("main") {
-        let url: tauri::Url = "http://wsf.localhost/".parse().unwrap();
-        let _ = win.navigate(url);
-    }
+    s.active_version = None;
+    write_active_version(&s.base_dir, None);
 
     eprintln!("Deactivated upstream UI, switched to built-in");
     Ok("Switched to built-in UI".to_string())

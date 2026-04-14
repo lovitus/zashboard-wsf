@@ -315,8 +315,9 @@ const handleActivate = async (tag: string) => {
   switching.value = true
   error.value = ''
   try {
-    // Rust command activates the version AND navigates the webview
     await uiActivateVersion(tag)
+    // Window is on wsf:// origin. Reload picks up upstream assets.
+    window.location.reload()
   } catch (e) {
     error.value = String(e)
     switching.value = false
@@ -327,8 +328,9 @@ const handleDeactivate = async () => {
   switching.value = true
   error.value = ''
   try {
-    // Rust command deactivates AND navigates back to built-in
     await uiDeactivate()
+    // Window is on wsf:// origin. Reload picks up bundled assets.
+    window.location.reload()
   } catch (e) {
     error.value = String(e)
     switching.value = false

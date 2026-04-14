@@ -1078,19 +1078,9 @@ pub fn run() {
                 }
             }
 
-            // --- Navigate to wsf:// protocol when upstream UI is active ---
-            // Default URL loads bundled assets from tauri://. When an upstream version is
-            // active we redirect to the wsf:// custom protocol which serves from disk.
-            // On Windows/Android this maps to http://wsf.localhost/, on macOS/Linux to wsf://localhost/.
-            {
-                let ui_state = app.state::<Mutex<ui_manager::UiManagerState>>();
-                let has_active = ui_state.lock().map(|s| s.active_version.is_some()).unwrap_or(false);
-                if has_active {
-                    if let Some(win) = app.get_webview_window("main") {
-                        let _ = win.navigate("http://wsf.localhost/".parse().unwrap());
-                    }
-                }
-            }
+            // Window URL is wsf://localhost/ (set in tauri.conf.json).
+            // The wsf protocol handler serves upstream files when active,
+            // bundled assets otherwise. No navigation needed at startup.
 
             // --- System Tray (desktop only) ---
             #[cfg(desktop)]
