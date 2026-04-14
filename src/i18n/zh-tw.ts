@@ -345,6 +345,7 @@ const zhTW: LANG_MESSAGE = {
   upstreamDownloaded: '已下載',
   upstreamDownload: '下載',
   upstreamActivate: '使用',
+  upstreamLaunch: '啟動',
   upstreamLocalOnly: '本地版本',
   upstreamCustomUrl: '自訂URL',
   upstreamReleasesUrl: '版本列表API位址',

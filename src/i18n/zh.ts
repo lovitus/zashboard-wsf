@@ -345,6 +345,7 @@ const zh: LANG_MESSAGE = {
   upstreamDownloaded: '已下载',
   upstreamDownload: '下载',
   upstreamActivate: '使用',
+  upstreamLaunch: '启动',
   upstreamLocalOnly: '本地版本',
   upstreamCustomUrl: '自定义URL',
   upstreamReleasesUrl: '版本列表API地址',

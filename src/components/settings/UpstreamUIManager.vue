@@ -31,18 +31,30 @@
     <!-- Active override banner -->
     <div
       v-if="info?.active_version"
-      class="bg-warning/10 border-warning flex items-center justify-between rounded-lg border p-3"
+      class="bg-success/10 border-success flex flex-col gap-2 rounded-lg border p-3"
     >
-      <div class="text-sm">
+      <div class="text-sm font-medium">
         {{ $t('upstreamActiveDesc', { version: info.active_version }) }}
       </div>
-      <button
-        class="btn btn-warning btn-xs btn-outline"
-        :disabled="switching"
-        @click="handleDeactivate"
-      >
-        {{ $t('upstreamSwitchBuiltin') }}
-      </button>
+      <div class="flex gap-2">
+        <button
+          class="btn btn-success btn-xs"
+          @click="handleLaunch"
+        >
+          {{ $t('upstreamLaunch') }}
+        </button>
+        <button
+          class="btn btn-warning btn-xs btn-outline"
+          :disabled="switching"
+          @click="handleDeactivate"
+        >
+          <span
+            v-if="switching"
+            class="loading loading-spinner loading-xs"
+          />
+          {{ $t('upstreamSwitchBuiltin') }}
+        </button>
+      </div>
     </div>
 
     <!-- Fetch releases -->
@@ -114,6 +126,10 @@
             :disabled="switching"
             @click="handleActivate(release.tag_name)"
           >
+            <span
+              v-if="switching"
+              class="loading loading-spinner loading-xs"
+            />
             {{ $t('upstreamActivate') }}
           </button>
           <!-- Delete button -->
@@ -160,6 +176,10 @@
             :disabled="switching"
             @click="handleActivate(ver.tag)"
           >
+            <span
+              v-if="switching"
+              class="loading loading-spinner loading-xs"
+            />
             {{ $t('upstreamActivate') }}
           </button>
           <button
@@ -231,7 +251,7 @@ import {
   uiGetInfo,
   uiSetCustomUrls,
 } from '@/api/ui_manager'
-import { navigateToWsfRoot, navigateToWsfSetup } from '@/api/upstream_navigation'
+import { navigateToWsfSetup } from '@/api/upstream_navigation'
 import { computed, onMounted, ref } from 'vue'
 
 const releases = ref<UpstreamRelease[]>([])
@@ -305,12 +325,16 @@ const handleActivate = async (tag: string) => {
   error.value = ''
   try {
     await uiActivateVersion(tag)
-    // Navigate to upstream UI's setup page so the user can choose a backend
-    navigateToWsfSetup()
+    await refreshInfo()
   } catch (e) {
     error.value = String(e)
+  } finally {
     switching.value = false
   }
+}
+
+const handleLaunch = () => {
+  navigateToWsfSetup()
 }
 
 const handleDeactivate = async () => {
@@ -318,10 +342,10 @@ const handleDeactivate = async () => {
   error.value = ''
   try {
     await uiDeactivate()
-    // Navigate back to wsf origin which now serves built-in UI
-    navigateToWsfRoot()
+    await refreshInfo()
   } catch (e) {
     error.value = String(e)
+  } finally {
     switching.value = false
   }
 }
