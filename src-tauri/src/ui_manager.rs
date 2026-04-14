@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamRelease {
@@ -363,7 +363,8 @@ pub async fn ui_activate_version(
     // Frontend JS cannot reliably navigate across origins (tauri:// → wsf://),
     // so we do it from the Rust side.
     if let Some(win) = app.get_webview_window("main") {
-        let _ = win.navigate("http://wsf.localhost/#/setup".parse().unwrap());
+        let url: tauri::Url = "http://wsf.localhost/#/setup".parse().unwrap();
+        let _ = win.navigate(url);
     }
 
     eprintln!("Activated upstream UI version {}", tag);
@@ -384,7 +385,8 @@ pub async fn ui_deactivate(
     // Navigate back to wsf origin — the protocol handler will now serve
     // bundled assets since upstream is deactivated.
     if let Some(win) = app.get_webview_window("main") {
-        let _ = win.navigate("http://wsf.localhost/".parse().unwrap());
+        let url: tauri::Url = "http://wsf.localhost/".parse().unwrap();
+        let _ = win.navigate(url);
     }
 
     eprintln!("Deactivated upstream UI, switched to built-in");
