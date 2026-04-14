@@ -1,6 +1,6 @@
 {
   "productName": "zashboard",
-  "version": "1.0.47",
+  "version": "1.0.48",
   "identifier": "com.lovitus.zashboard",
   "build": {
     "beforeDevCommand": "pnpm dev",

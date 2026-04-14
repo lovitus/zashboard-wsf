@@ -470,34 +470,32 @@ const MANAGEMENT_BUTTON_SCRIPT: &str = r#"<script>
   function createToolbar(){
     var bar=document.createElement('div');
     bar.id='wsf-toolbar';
-    // bottom: 60px clears Android 3-button nav (~48px) plus margin.
-    // On devices with gesture nav, safe-area-inset-bottom provides spacing.
-    bar.style.cssText='position:fixed;right:12px;bottom:max(env(safe-area-inset-bottom,0px) + 12px, 60px);'+
-      'z-index:2147483647;display:flex;gap:6px;pointer-events:auto;';
+    bar.style.cssText='position:fixed;right:8px;bottom:max(env(safe-area-inset-bottom,0px) + 8px, 56px);'+
+      'z-index:2147483647;display:flex;gap:4px;pointer-events:auto;';
 
-    var btnStyle='padding:7px 12px;border-radius:8px;font-size:12px;line-height:1;'+
+    var btnStyle='padding:4px 8px;border-radius:6px;font-size:11px;line-height:1;'+
       'font-family:system-ui,sans-serif;cursor:pointer;white-space:nowrap;'+
       'user-select:none;-webkit-user-select:none;backdrop-filter:blur(8px);'+
-      'opacity:0.85;transition:opacity 0.2s;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+      'opacity:0.75;transition:opacity 0.2s;box-shadow:0 1px 4px rgba(0,0,0,0.2);';
 
     // "Setup" button
     var setup=document.createElement('button');
     setup.textContent='Setup';
-    setup.style.cssText=btnStyle+'background:rgba(255,255,255,0.7);color:#111827;border:1px solid rgba(107,114,128,0.35);';
-    setup.onmouseenter=function(){setup.style.opacity='1';};
-    setup.onmouseleave=function(){setup.style.opacity='0.85';};
+    setup.style.cssText=btnStyle+'background:rgba(255,255,255,0.45);color:#111827;border:1px solid rgba(107,114,128,0.25);';
+    setup.onmouseenter=function(){setup.style.opacity='0.95';};
+    setup.onmouseleave=function(){setup.style.opacity='0.75';};
     setup.onclick=function(){ window.location.hash='#/setup'; };
     bar.appendChild(setup);
 
-    // "↩ Built-in UI" button
+    // "↩ Built-in" button
     var btn=document.createElement('button');
-    btn.textContent='\u21A9 Built-in UI';
-    btn.style.cssText=btnStyle+'background:rgba(0,0,0,0.82);color:#fff;border:1px solid rgba(255,255,255,0.25);';
-    btn.onmouseenter=function(){btn.style.opacity='1';};
-    btn.onmouseleave=function(){btn.style.opacity='0.85';};
+    btn.textContent='\u21A9 Built-in';
+    btn.style.cssText=btnStyle+'background:rgba(0,0,0,0.45);color:#fff;border:1px solid rgba(255,255,255,0.2);';
+    btn.onmouseenter=function(){btn.style.opacity='0.95';};
+    btn.onmouseleave=function(){btn.style.opacity='0.75';};
     btn.onclick=function(){
-      btn.disabled=true; btn.textContent='Switching...'; btn.style.opacity='0.5';
-      setup.disabled=true; setup.style.opacity='0.5';
+      btn.disabled=true; btn.textContent='...'; btn.style.opacity='0.4';
+      setup.disabled=true; setup.style.opacity='0.4';
       fetch('/__wsf_deactivate',{method:'POST',cache:'no-store'}).finally(clearSwAndReload);
     };
     bar.appendChild(btn);
