@@ -2,11 +2,11 @@
  * @vitest-environment jsdom
  */
 import { describe, expect, it } from 'vitest'
-import { reloadForUiSwitch } from '@/api/upstream_navigation'
+import { navigateToWsfRoot, navigateToWsfSetup } from '@/api/upstream_navigation'
 
 describe('upstream_navigation', () => {
-  describe('reloadForUiSwitch', () => {
-    it('navigates to wsf origin', async () => {
+  describe('navigateToWsfSetup', () => {
+    it('navigates to wsf origin setup page', () => {
       const loc = { href: '' }
       Object.defineProperty(window, 'location', {
         value: loc,
@@ -14,7 +14,21 @@ describe('upstream_navigation', () => {
         configurable: true,
       })
 
-      await reloadForUiSwitch()
+      navigateToWsfSetup()
+      expect(loc.href).toBe('http://wsf.localhost/#/setup')
+    })
+  })
+
+  describe('navigateToWsfRoot', () => {
+    it('navigates to wsf origin root', () => {
+      const loc = { href: '' }
+      Object.defineProperty(window, 'location', {
+        value: loc,
+        writable: true,
+        configurable: true,
+      })
+
+      navigateToWsfRoot()
       expect(loc.href).toBe('http://wsf.localhost/')
     })
   })

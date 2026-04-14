@@ -5,6 +5,13 @@
 
 const WSF_ORIGIN = 'http://wsf.localhost/'
 
-export async function reloadForUiSwitch(): Promise<void> {
+export function navigateToWsfSetup(): void {
+  // Navigate to upstream UI's setup page so the user can choose a backend.
+  // Without /#/setup the upstream SPA auto-connects to whichever backend was
+  // stored in localStorage (shared origin), skipping the selection screen.
+  window.location.href = WSF_ORIGIN + '#/setup'
+}
+
+export function navigateToWsfRoot(): void {
   window.location.href = WSF_ORIGIN
 }

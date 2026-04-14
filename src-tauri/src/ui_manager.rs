@@ -449,59 +449,78 @@ pub async fn ui_delete_version(
 // --- Protocol handler helpers ---
 
 /// Script injected into upstream UI's index.html.
-/// Adds a floating "↩ Built-in UI" button that calls ui_deactivate via Tauri IPC and reloads.
+/// Adds:
+///  - Floating "↩ Built-in UI" button (bottom-right, above Android nav bar)
+///  - "Setup" button (top-left, above safe-area) to navigate back to upstream setup page
+///  - Safe-area CSS patch for upstream zashboard's .ctrls-bar and .dock
 const MANAGEMENT_BUTTON_SCRIPT: &str = r#"<script>
 (function(){
   if(window.__WSF_MGMT_BTN__) return;
   window.__WSF_MGMT_BTN__=true;
 
-  function createBtn(){
+  var commonStyle='z-index:2147483647;font-family:system-ui,sans-serif;cursor:pointer;'+
+    'pointer-events:auto;user-select:none;-webkit-user-select:none;'+
+    'border-radius:8px;backdrop-filter:blur(8px);opacity:0.9;transition:opacity 0.2s;'+
+    'box-shadow:0 2px 8px rgba(0,0,0,0.3);font-size:12px;line-height:1;white-space:nowrap;';
+
+  function clearSwAndReload(){
+    function doReload(){ window.location.reload(); }
+    if(!navigator.serviceWorker){ doReload(); return; }
+    navigator.serviceWorker.getRegistrations().then(function(regs){
+      return Promise.all(regs.map(function(r){return r.unregister();}));
+    }).then(function(){
+      if(!window.caches) return;
+      return caches.keys().then(function(n){return Promise.all(n.map(function(k){return caches.delete(k);}));});
+    }).finally(doReload);
+  }
+
+  function createContainer(){
+    var c=document.createElement('div');
+    c.id='wsf-mgmt-container';
+    c.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom),16px) + 8px);'+
+      'z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none;';
+
+    // "↩ Built-in UI" button
     var btn=document.createElement('button');
-    btn.id='wsf-mgmt-btn';
+    btn.id='wsf-builtin-btn';
     btn.textContent='\u21A9 Built-in UI';
-    btn.style.cssText='position:fixed;bottom:16px;right:16px;z-index:2147483647;padding:8px 16px;'+
-      'border-radius:8px;background:rgba(0,0,0,0.82);color:#fff;font-size:13px;cursor:pointer;'+
-      'border:1px solid rgba(255,255,255,0.25);backdrop-filter:blur(8px);opacity:0.9;'+
-      'transition:opacity 0.2s;font-family:system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.3);'+
-      'pointer-events:auto;user-select:none;-webkit-user-select:none;';
+    btn.style.cssText='position:relative;padding:7px 14px;'+commonStyle+
+      'background:rgba(0,0,0,0.82);color:#fff;border:1px solid rgba(255,255,255,0.25);';
     btn.onmouseenter=function(){btn.style.opacity='1';};
     btn.onmouseleave=function(){btn.style.opacity='0.9';};
     btn.onclick=function(){
-      btn.disabled=true;
-      btn.textContent='Switching...';
-      btn.style.opacity='0.5';
-      fetch('/__wsf_deactivate',{method:'POST',cache:'no-store'}).finally(function(){
-        // Unregister service workers so they don't serve cached upstream assets
-        if(navigator.serviceWorker){
-          navigator.serviceWorker.getRegistrations().then(function(regs){
-            var p=regs.map(function(r){return r.unregister();});
-            return Promise.all(p);
-          }).then(function(){
-            // Clear all caches
-            if(window.caches){
-              return caches.keys().then(function(names){
-                return Promise.all(names.map(function(n){return caches.delete(n);}));
-              });
-            }
-          }).finally(function(){
-            window.location.reload();
-          });
-        } else {
-          window.location.reload();
-        }
-      });
+      btn.disabled=true; btn.textContent='Switching...'; btn.style.opacity='0.5';
+      fetch('/__wsf_deactivate',{method:'POST',cache:'no-store'}).finally(clearSwAndReload);
     };
-    return btn;
+    c.appendChild(btn);
+
+    return c;
+  }
+
+  function createSetupBtn(){
+    var s=document.createElement('button');
+    s.id='wsf-setup-btn';
+    s.textContent='Setup';
+    s.style.cssText='position:fixed;left:12px;top:calc(max(env(safe-area-inset-top),12px) + 8px);'+
+      'padding:6px 10px;'+commonStyle+
+      'background:rgba(255,255,255,0.62);color:#111827;border:1px solid rgba(107,114,128,0.35);';
+    s.onmouseenter=function(){s.style.opacity='1';};
+    s.onmouseleave=function(){s.style.opacity='0.9';};
+    s.onclick=function(){ window.location.hash='#/setup'; };
+    return s;
   }
 
   function ensure(){
-    if(document.getElementById('wsf-mgmt-btn')) return;
-    var target=document.body||document.documentElement;
-    if(!target) return;
-    target.appendChild(createBtn());
+    if(!document.getElementById('wsf-mgmt-container')){
+      var target=document.body||document.documentElement;
+      if(target) target.appendChild(createContainer());
+    }
+    if(!document.getElementById('wsf-setup-btn')){
+      var target=document.body||document.documentElement;
+      if(target) target.appendChild(createSetupBtn());
+    }
   }
 
-  // Keep the button alive: SPA frameworks may wipe body children on route changes
   var observer=new MutationObserver(function(){ ensure(); });
   function startObserver(){
     if(document.body){
@@ -515,12 +534,26 @@ const MANAGEMENT_BUTTON_SCRIPT: &str = r#"<script>
     }
   }
   startObserver();
-  // Extra safety: retry a few times in case body isn't ready yet
   setTimeout(ensure,300);
   setTimeout(ensure,1000);
   setTimeout(ensure,3000);
 })();
 </script>"#;
+
+/// CSS patch for upstream zashboard safe-area overlap on mobile.
+/// The upstream .ctrls-bar (top nav) doesn't account for env(safe-area-inset-top),
+/// causing it to be covered by the Android status bar / iOS notch.
+const SAFE_AREA_PATCH_STYLE: &str = r#"<style id="wsf-safe-area-patch">
+:root {
+  --wsf-safe-top: max(env(safe-area-inset-top), 24px);
+  --wsf-safe-bottom: max(env(safe-area-inset-bottom), 24px);
+}
+@media (max-width: 900px) {
+  .ctrls-bar { padding-top: var(--wsf-safe-top) !important; }
+  .dock { bottom: calc(var(--spacing, 4px) * 2 + var(--wsf-safe-bottom)) !important; }
+  .dock-shadow { height: var(--wsf-safe-bottom) !important; }
+}
+</style>"#;
 
 /// Deactivate upstream UI from the protocol handler (no Tauri command context needed).
 pub fn deactivate_from_protocol(state: &Mutex<UiManagerState>) {
@@ -570,24 +603,35 @@ pub fn resolve_upstream_file(state: &Mutex<UiManagerState>, path: &str) -> Optio
     Some((body, mime))
 }
 
-/// Inject the floating management button script into HTML.
+/// Inject management scripts and safe-area CSS into upstream HTML.
 fn inject_management_button(html_bytes: &[u8]) -> Vec<u8> {
     let html = String::from_utf8_lossy(html_bytes);
     if html.contains("__WSF_MGMT_BTN__") {
-        // Already injected (e.g. cached or pre-processed)
         return html_bytes.to_vec();
     }
-    // Insert before </body> if present, otherwise append
-    if let Some(pos) = html.find("</body>") {
-        let mut result = html[..pos].to_string();
-        result.push_str(MANAGEMENT_BUTTON_SCRIPT);
-        result.push_str(&html[pos..]);
-        result.into_bytes()
-    } else {
-        let mut result = html.to_string();
-        result.push_str(MANAGEMENT_BUTTON_SCRIPT);
-        result.into_bytes()
+
+    let mut result = html.to_string();
+
+    // Inject safe-area CSS into <head> (before any SPA bundles run)
+    if !result.contains("wsf-safe-area-patch") {
+        if let Some(pos) = result.find("</head>").or_else(|| result.find("</HEAD>")) {
+            result.insert_str(pos, SAFE_AREA_PATCH_STYLE);
+        } else if let Some(pos) = result.find("<head>").or_else(|| result.find("<HEAD>")) {
+            result.insert_str(pos + 6, SAFE_AREA_PATCH_STYLE);
+        } else {
+            // No <head>; prepend
+            result = format!("{}{}", SAFE_AREA_PATCH_STYLE, result);
+        }
     }
+
+    // Inject management button script before </body>
+    if let Some(pos) = result.find("</body>") {
+        result.insert_str(pos, MANAGEMENT_BUTTON_SCRIPT);
+    } else {
+        result.push_str(MANAGEMENT_BUTTON_SCRIPT);
+    }
+
+    result.into_bytes()
 }
 
 fn mime_type(path: &str) -> &'static str {

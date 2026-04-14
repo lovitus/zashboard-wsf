@@ -231,7 +231,7 @@ import {
   uiGetInfo,
   uiSetCustomUrls,
 } from '@/api/ui_manager'
-import { reloadForUiSwitch } from '@/api/upstream_navigation'
+import { navigateToWsfRoot, navigateToWsfSetup } from '@/api/upstream_navigation'
 import { computed, onMounted, ref } from 'vue'
 
 const releases = ref<UpstreamRelease[]>([])
@@ -305,8 +305,8 @@ const handleActivate = async (tag: string) => {
   error.value = ''
   try {
     await uiActivateVersion(tag)
-    // Reload to pick up upstream UI assets from the same origin
-    reloadForUiSwitch()
+    // Navigate to upstream UI's setup page so the user can choose a backend
+    navigateToWsfSetup()
   } catch (e) {
     error.value = String(e)
     switching.value = false
@@ -318,8 +318,8 @@ const handleDeactivate = async () => {
   error.value = ''
   try {
     await uiDeactivate()
-    // Reload to switch back to built-in UI assets
-    reloadForUiSwitch()
+    // Navigate back to wsf origin which now serves built-in UI
+    navigateToWsfRoot()
   } catch (e) {
     error.value = String(e)
     switching.value = false

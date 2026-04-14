@@ -11,9 +11,15 @@ describe('refactor regression: removed exports no longer exist', () => {
     expect(upstreamNav).not.toHaveProperty('openActiveUpstreamDashboardIfNeeded')
   })
 
-  it('upstream_navigation DOES export reloadForUiSwitch', () => {
-    expect(upstreamNav).toHaveProperty('reloadForUiSwitch')
-    expect(typeof upstreamNav.reloadForUiSwitch).toBe('function')
+  it('upstream_navigation DOES export navigateToWsfSetup and navigateToWsfRoot', () => {
+    expect(upstreamNav).toHaveProperty('navigateToWsfSetup')
+    expect(typeof upstreamNav.navigateToWsfSetup).toBe('function')
+    expect(upstreamNav).toHaveProperty('navigateToWsfRoot')
+    expect(typeof upstreamNav.navigateToWsfRoot).toBe('function')
+  })
+
+  it('upstream_navigation does NOT export reloadForUiSwitch (replaced)', () => {
+    expect(upstreamNav).not.toHaveProperty('reloadForUiSwitch')
   })
 
   it('UiVersionInfo does NOT contain upstream_url field', async () => {
