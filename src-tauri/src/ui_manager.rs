@@ -467,19 +467,12 @@ pub async fn ui_delete_version(
 // --- Protocol handler helpers ---
 
 /// Script injected into upstream UI's index.html.
-/// Adds:
-///  - Floating "↩ Built-in UI" button (bottom-right, above Android nav bar)
-///  - "Setup" button (top-left, above safe-area) to navigate back to upstream setup page
-///  - Safe-area CSS patch for upstream zashboard's .ctrls-bar and .dock
+/// Adds a floating toolbar (bottom-right, well above Android 3-button nav)
+/// with "Setup" and "↩ Built-in UI" buttons.
 const MANAGEMENT_BUTTON_SCRIPT: &str = r#"<script>
 (function(){
   if(window.__WSF_MGMT_BTN__) return;
   window.__WSF_MGMT_BTN__=true;
-
-  var commonStyle='z-index:2147483647;font-family:system-ui,sans-serif;cursor:pointer;'+
-    'pointer-events:auto;user-select:none;-webkit-user-select:none;'+
-    'border-radius:8px;backdrop-filter:blur(8px);opacity:0.9;transition:opacity 0.2s;'+
-    'box-shadow:0 2px 8px rgba(0,0,0,0.3);font-size:12px;line-height:1;white-space:nowrap;';
 
   function clearSwAndReload(){
     function doReload(){ window.location.reload(); }
@@ -492,51 +485,48 @@ const MANAGEMENT_BUTTON_SCRIPT: &str = r#"<script>
     }).finally(doReload);
   }
 
-  function createContainer(){
-    var c=document.createElement('div');
-    c.id='wsf-mgmt-container';
-    c.style.cssText='position:fixed;right:12px;bottom:calc(max(env(safe-area-inset-bottom),16px) + 8px);'+
-      'z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none;';
+  function createToolbar(){
+    var bar=document.createElement('div');
+    bar.id='wsf-toolbar';
+    // bottom: 60px clears Android 3-button nav (~48px) plus margin.
+    // On devices with gesture nav, safe-area-inset-bottom provides spacing.
+    bar.style.cssText='position:fixed;right:12px;bottom:max(env(safe-area-inset-bottom,0px) + 12px, 60px);'+
+      'z-index:2147483647;display:flex;gap:6px;pointer-events:auto;';
+
+    var btnStyle='padding:7px 12px;border-radius:8px;font-size:12px;line-height:1;'+
+      'font-family:system-ui,sans-serif;cursor:pointer;white-space:nowrap;'+
+      'user-select:none;-webkit-user-select:none;backdrop-filter:blur(8px);'+
+      'opacity:0.85;transition:opacity 0.2s;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+
+    // "Setup" button
+    var setup=document.createElement('button');
+    setup.textContent='Setup';
+    setup.style.cssText=btnStyle+'background:rgba(255,255,255,0.7);color:#111827;border:1px solid rgba(107,114,128,0.35);';
+    setup.onmouseenter=function(){setup.style.opacity='1';};
+    setup.onmouseleave=function(){setup.style.opacity='0.85';};
+    setup.onclick=function(){ window.location.hash='#/setup'; };
+    bar.appendChild(setup);
 
     // "↩ Built-in UI" button
     var btn=document.createElement('button');
-    btn.id='wsf-builtin-btn';
     btn.textContent='\u21A9 Built-in UI';
-    btn.style.cssText='position:relative;padding:7px 14px;'+commonStyle+
-      'background:rgba(0,0,0,0.82);color:#fff;border:1px solid rgba(255,255,255,0.25);';
+    btn.style.cssText=btnStyle+'background:rgba(0,0,0,0.82);color:#fff;border:1px solid rgba(255,255,255,0.25);';
     btn.onmouseenter=function(){btn.style.opacity='1';};
-    btn.onmouseleave=function(){btn.style.opacity='0.9';};
+    btn.onmouseleave=function(){btn.style.opacity='0.85';};
     btn.onclick=function(){
       btn.disabled=true; btn.textContent='Switching...'; btn.style.opacity='0.5';
+      setup.disabled=true; setup.style.opacity='0.5';
       fetch('/__wsf_deactivate',{method:'POST',cache:'no-store'}).finally(clearSwAndReload);
     };
-    c.appendChild(btn);
+    bar.appendChild(btn);
 
-    return c;
-  }
-
-  function createSetupBtn(){
-    var s=document.createElement('button');
-    s.id='wsf-setup-btn';
-    s.textContent='Setup';
-    s.style.cssText='position:fixed;left:12px;top:calc(max(env(safe-area-inset-top),12px) + 8px);'+
-      'padding:6px 10px;'+commonStyle+
-      'background:rgba(255,255,255,0.62);color:#111827;border:1px solid rgba(107,114,128,0.35);';
-    s.onmouseenter=function(){s.style.opacity='1';};
-    s.onmouseleave=function(){s.style.opacity='0.9';};
-    s.onclick=function(){ window.location.hash='#/setup'; };
-    return s;
+    return bar;
   }
 
   function ensure(){
-    if(!document.getElementById('wsf-mgmt-container')){
-      var target=document.body||document.documentElement;
-      if(target) target.appendChild(createContainer());
-    }
-    if(!document.getElementById('wsf-setup-btn')){
-      var target=document.body||document.documentElement;
-      if(target) target.appendChild(createSetupBtn());
-    }
+    if(document.getElementById('wsf-toolbar')) return;
+    var target=document.body||document.documentElement;
+    if(target) target.appendChild(createToolbar());
   }
 
   var observer=new MutationObserver(function(){ ensure(); });
