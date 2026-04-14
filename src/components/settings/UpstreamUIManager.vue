@@ -31,30 +31,22 @@
     <!-- Active override banner -->
     <div
       v-if="info?.active_version"
-      class="bg-success/10 border-success flex flex-col gap-2 rounded-lg border p-3"
+      class="bg-warning/10 border-warning flex items-center justify-between rounded-lg border p-3"
     >
-      <div class="text-sm font-medium">
+      <div class="text-sm">
         {{ $t('upstreamActiveDesc', { version: info.active_version }) }}
       </div>
-      <div class="flex gap-2">
-        <button
-          class="btn btn-success btn-xs"
-          @click="handleLaunch"
-        >
-          {{ $t('upstreamLaunch') }}
-        </button>
-        <button
-          class="btn btn-warning btn-xs btn-outline"
-          :disabled="switching"
-          @click="handleDeactivate"
-        >
-          <span
-            v-if="switching"
-            class="loading loading-spinner loading-xs"
-          />
-          {{ $t('upstreamSwitchBuiltin') }}
-        </button>
-      </div>
+      <button
+        class="btn btn-warning btn-xs btn-outline"
+        :disabled="switching"
+        @click="handleDeactivate"
+      >
+        <span
+          v-if="switching"
+          class="loading loading-spinner loading-xs"
+        />
+        {{ $t('upstreamSwitchBuiltin') }}
+      </button>
     </div>
 
     <!-- Fetch releases -->
@@ -251,7 +243,6 @@ import {
   uiGetInfo,
   uiSetCustomUrls,
 } from '@/api/ui_manager'
-import { navigateToWsfSetup } from '@/api/upstream_navigation'
 import { computed, onMounted, ref } from 'vue'
 
 const releases = ref<UpstreamRelease[]>([])
@@ -324,28 +315,22 @@ const handleActivate = async (tag: string) => {
   switching.value = true
   error.value = ''
   try {
+    // Rust command activates the version AND navigates the webview
     await uiActivateVersion(tag)
-    await refreshInfo()
   } catch (e) {
     error.value = String(e)
-  } finally {
     switching.value = false
   }
-}
-
-const handleLaunch = () => {
-  navigateToWsfSetup()
 }
 
 const handleDeactivate = async () => {
   switching.value = true
   error.value = ''
   try {
+    // Rust command deactivates AND navigates back to built-in
     await uiDeactivate()
-    await refreshInfo()
   } catch (e) {
     error.value = String(e)
-  } finally {
     switching.value = false
   }
 }
